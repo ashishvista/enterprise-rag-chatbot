@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
-ACCEPTED_EVENTS = {"page_created", "page_updated"}
+ACCEPTED_EVENTS = {"page_created", "page_edited"}
 
 
 class ConfluenceContentInfo(BaseModel):
@@ -28,12 +28,15 @@ class ConfluenceContentInfo(BaseModel):
 class ConfluenceWebhookEvent(BaseModel):
     """Primary webhook payload body."""
 
-    event_type: Optional[str] = Field(None, alias="eventType")
-    webhook_event: Optional[str] = Field(None, alias="webhookEvent")
-    content: ConfluenceContentInfo
+    event_type: str = Field(None, alias="event_type")
+    page_id: str
+    author:Optional[str]
+    url:Optional[str]
+    page_title:Optional[str]
+    page_content:Optional[str]
 
     def resolved_event(self) -> Optional[str]:
-        return self.event_type or self.webhook_event
+        return self.event_type
 
 
 @router.post("/confluence", status_code=202)
@@ -47,7 +50,7 @@ def handle_confluence_webhook(
     if event_name not in ACCEPTED_EVENTS:
         logger.info("Ignoring unsupported Confluence webhook event: %s", event_name)
         return {"status": "ignored", "reason": "unsupported event"}
-    page_id = payload.content.id
+    page_id = payload.page_id
     service = PageIngestionService(settings)
     background_tasks.add_task(service.process_page, page_id)
     logger.info("Enqueued Confluence page %s for ingestion", page_id)
