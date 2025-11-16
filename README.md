@@ -30,7 +30,7 @@ FastAPI service that ingests Confluence page creation + update webhooks, fetches
 
 ## Running the service
 ```bash
-uvicorn src.main:app --reload
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 The server exposes `/webhook/confluence` and `/health`. Point the Confluence webhook subscription to `https://<host>/webhook/confluence` and allow Atlassian's IPs.
 
