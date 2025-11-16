@@ -8,8 +8,12 @@ from .config import Settings
 
 def create_pgvector_store(settings: Settings) -> PGVectorStore:
     """Instantiate a pgvector-backed vector store."""
+    async_url = settings.async_db_url()
+    sync_url = settings.sync_db_url()
     return PGVectorStore(
-        connection_string=settings.database_url,
+        connection_string=async_url,
+        async_connection_string=async_url,
         table_name=settings.vector_collection,
-        embed_dim=None,  # let pgvector infer from first insert
+        schema_name=settings.database_schema,
+        embed_dim=1024,  # bge-m3 outputs 1024-d vectors
     )

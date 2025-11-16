@@ -42,7 +42,9 @@ The server exposes `/webhook/confluence` and `/health`. Point the Confluence web
 | `CONFLUENCE_SPACE_WHITELIST` | Optional comma list of space keys that should be indexed. |
 | `OLLAMA_BASE_URL` | Ollama instance root (defaults to `http://localhost:11434`). |
 | `EMBEDDING_MODEL_NAME` | Embedding model passed to Ollama (defaults to `bge-m3`). |
-| `DATABASE_URL` | SQLAlchemy/psycopg style connection string for pgvector. |
+| `DATABASE_URL_ASYNC` | Async connection string (e.g., `postgresql+asyncpg://…`). Provide this **or** `DATABASE_URL`. |
+| `DATABASE_URL` | Sync psycopg connection string. Provide this **or** `DATABASE_URL_ASYNC`; the missing one is auto-derived. |
+| `DATABASE_SCHEMA` | Postgres schema the vector table lives in (defaults to `public`). |
 | `VECTOR_COLLECTION` | Table name used by `PGVectorStore`. |
 
 ## Triggering ingestion
