@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app.config import get_settings
-from app.webhook import router as webhook_router
+from .app.config import get_settings
+from .app.webhook import router as webhook_router
 
 
 def create_app() -> FastAPI:
