@@ -52,7 +52,11 @@ class PageIngestionService:
             logger.warning("Page %s produced zero nodes after chunking", page_id)
             return
         storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
-        VectorStoreIndex(nodes, storage_context=storage_context, embed_model=self.embed_model)
+        try:
+            VectorStoreIndex(nodes, storage_context=storage_context, embed_model=self.embed_model)
+        except Exception as e:
+            logger.error("Failed to create vector index for page %s: %s", page_id, e, exc_info=True)
+            raise
         logger.info("Finished indexing page %s (%s nodes)", page_id, len(nodes))
 
     def _build_nodes(self, document: Document) -> List:

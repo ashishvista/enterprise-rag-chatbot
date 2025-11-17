@@ -11,7 +11,7 @@ def create_pgvector_store(settings: Settings) -> PGVectorStore:
     async_url = settings.async_db_url()
     sync_url = settings.sync_db_url()
     return PGVectorStore(
-        connection_string=async_url,
+        connection_string=sync_url,
         async_connection_string=async_url,
         table_name=settings.vector_collection,
         schema_name=settings.database_schema,

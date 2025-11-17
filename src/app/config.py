@@ -29,9 +29,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _ensure_database_urls(self) -> "Settings":
-        """Guarantee at least one DB URL is present and derive the other."""
+        """Guarantee at least one DB URL is present and derive/normalize the other."""
         if not self.database_url_async and not self.database_url:
             raise ValueError("Set DATABASE_URL_ASYNC or DATABASE_URL in the environment.")
+
+        if self.database_url:
+            self.database_url = normalize_sync_connection_string(self.database_url)
+        if self.database_url_async:
+            self.database_url_async = normalize_async_connection_string(self.database_url_async)
+
         if not self.database_url_async and self.database_url:
             self.database_url_async = infer_async_connection_string(self.database_url)
         if not self.database_url and self.database_url_async:
@@ -63,23 +69,31 @@ def get_settings() -> Settings:
 
 def infer_sync_connection_string(async_url: str) -> str:
     """Best-effort conversion from asyncpg URL to psycopg equivalent."""
-    if "+asyncpg" in async_url:
-        return async_url.replace("+asyncpg", "+psycopg", 1)
-    if async_url.startswith("postgresql://"):
-        return async_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    raise ValueError(
-        "Unable to infer sync connection string from DATABASE_URL_ASYNC. "
-        "Set DATABASE_URL explicitly."
-    )
+    return normalize_sync_connection_string(async_url)
 
 
 def infer_async_connection_string(sync_url: str) -> str:
     """Best-effort conversion from psycopg URL to asyncpg equivalent."""
-    if "+psycopg" in sync_url:
-        return sync_url.replace("+psycopg", "+asyncpg", 1)
-    if sync_url.startswith("postgresql://"):
-        return sync_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    raise ValueError(
-        "Unable to infer async connection string from DATABASE_URL. "
-        "Set DATABASE_URL_ASYNC explicitly."
-    )
+    return normalize_async_connection_string(sync_url)
+
+
+def normalize_sync_connection_string(url: str) -> str:
+    """Ensure the SQLAlchemy URL uses the psycopg (sync) driver."""
+    if "+psycopg" in url:
+        return url
+    if "+asyncpg" in url:
+        return url.replace("+asyncpg", "+psycopg", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
+def normalize_async_connection_string(url: str) -> str:
+    """Ensure the SQLAlchemy URL uses the asyncpg driver."""
+    if "+asyncpg" in url:
+        return url
+    if "+psycopg" in url:
+        return url.replace("+psycopg", "+asyncpg", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
