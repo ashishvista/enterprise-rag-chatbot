@@ -15,5 +15,5 @@ def create_pgvector_store(settings: Settings) -> PGVectorStore:
         async_connection_string=async_url,
         table_name=settings.vector_collection,
         schema_name=settings.database_schema,
-        embed_dim=1024,  # bge-m3 outputs 1024-d vectors
+        embed_dim=settings.embedding_dim,
     )

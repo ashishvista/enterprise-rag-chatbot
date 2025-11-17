@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     confluence_space_whitelist: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
     embedding_model_name: str = "bge-m3"
+    embedding_dim: int = 1024  # bge-m3: 1024, qwen3-embedding:8b: 4096
     database_url_async: Optional[str] = None
     database_url: Optional[str] = None
     database_schema: str = "public"
