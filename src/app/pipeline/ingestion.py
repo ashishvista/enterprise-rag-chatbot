@@ -5,7 +5,7 @@ import logging
 from typing import Dict, List
 
 from llama_index.core import Document, StorageContext, VectorStoreIndex
-from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import SentenceSplitter, SemanticSplitterNodeParser
 
 from ..config import Settings
 from ..confluence import ConfluenceClient
@@ -19,15 +19,12 @@ class PageIngestionService:
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.splitter = SentenceSplitter(
-            chunk_size=settings.chunk_size,
-            chunk_overlap=settings.chunk_overlap,
-        )
         self.embed_model = OllamaBgeM3Embedding(
             base_url=settings.ollama_base_url,
             model_name=settings.embedding_model_name,
             timeout=settings.request_timeout,
         )
+        self.splitter = self._build_chunker()
         self.vector_store = create_pgvector_store(settings)
 
     def process_page(self, page_id: str) -> None:
@@ -69,6 +66,29 @@ class PageIngestionService:
         for idx, node in enumerate(nodes):
             node.id_ = f"{document.doc_id}:{idx}"
         return nodes
+
+    def _build_chunker(self):
+        if self.settings.use_semantic_chunker:
+            logger.info(
+                "Using SemanticSplitterNodeParser with buffer_size=%s breakpoint_percentile=%s",
+                self.settings.semantic_chunker_buffer_size,
+                self.settings.semantic_chunker_breakpoint_percentile,
+            )
+            return SemanticSplitterNodeParser.from_defaults(
+                embed_model=self.embed_model,
+                buffer_size=self.settings.semantic_chunker_buffer_size,
+                breakpoint_percentile_threshold=self.settings.semantic_chunker_breakpoint_percentile,
+            )
+
+        logger.info(
+            "Using SentenceSplitter with chunk_size=%s overlap=%s",
+            self.settings.chunk_size,
+            self.settings.chunk_overlap,
+        )
+        return SentenceSplitter(
+            chunk_size=self.settings.chunk_size,
+            chunk_overlap=self.settings.chunk_overlap,
+        )
 
     def _delete_page_vectors(self, page_id: str) -> None:
         """Delete all existing vector embeddings for a given page."""
