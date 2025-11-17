@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import httpx
 from bs4 import BeautifulSoup, Comment
 
-from .config import Settings
+from ..config import Settings
 import re
 import html2text
 

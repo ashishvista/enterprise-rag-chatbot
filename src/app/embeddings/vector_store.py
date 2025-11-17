@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from llama_index.vector_stores.postgres import PGVectorStore
 
-from .config import Settings
+from ..config import Settings
 
 
 def create_pgvector_store(settings: Settings) -> PGVectorStore:

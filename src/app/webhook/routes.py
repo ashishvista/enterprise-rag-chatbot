@@ -8,8 +8,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .config import Settings, get_settings
-from .page_pipeline import PageIngestionService
+from ..config import Settings, get_settings
+from ..pipeline import PageIngestionService
 
 logger = logging.getLogger(__name__)
 
