@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ..config import Settings, get_settings
-from ..pipeline import PageIngestionService
+from ..embeddings import PageIngestionService
 
 logger = logging.getLogger(__name__)
 

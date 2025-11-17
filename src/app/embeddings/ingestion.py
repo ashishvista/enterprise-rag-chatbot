@@ -9,7 +9,8 @@ from llama_index.core.node_parser import SentenceSplitter, SemanticSplitterNodeP
 
 from ..config import Settings
 from ..confluence import ConfluenceClient
-from ..embeddings import OllamaBgeM3Embedding, create_pgvector_store
+from .ollama import OllamaBgeM3Embedding
+from .vector_store import create_pgvector_store
 
 logger = logging.getLogger(__name__)
 
