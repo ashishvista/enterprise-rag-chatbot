@@ -43,11 +43,6 @@ class ConfluenceClient:
     def page_as_md(page_payload: Dict[str, Any]) -> str:
         """Convert Confluence storage HTML to readable text."""
         body_html = page_payload.get("body", {}).get("storage", {}).get("value", "")
-        # soup = BeautifulSoup(body_html, "html.parser")
-        # # Replace block elements with newlines to keep structure readable.
-        # for br in soup.find_all(["br", "p", "li", "h1", "h2", "h3", "h4", "h5", "h6"]):
-        #     br.insert_after("\n")
-        # text = soup.get_text(separator=" ")
 
         soup = ConfluenceClient.clean_html(body_html)
         md = ConfluenceClient.html_to_markdown(soup)
