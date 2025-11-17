@@ -42,7 +42,7 @@ class PageIngestionService:
         if allowed and space_key not in allowed:
             logger.info("Skipping page %s because space %s is not whitelisted", page_id, space_key)
             return
-        document_text = ConfluenceClient.page_as_text(page_payload)
+        document_text = ConfluenceClient.page_as_md(page_payload)
         if not document_text.strip():
             logger.warning("Page %s has no textual content to index", page_id)
             return
