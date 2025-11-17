@@ -46,6 +46,10 @@ class PageIngestionService:
         if not document_text.strip():
             logger.warning("Page %s has no textual content to index", page_id)
             return
+        
+        # Delete existing vectors for this page before inserting new ones
+        self._delete_page_vectors(page_id)
+        
         document = Document(text=document_text, metadata=metadata, id_=str(page_id))
         nodes = self._build_nodes(document)
         if not nodes:
@@ -62,7 +66,16 @@ class PageIngestionService:
     def _build_nodes(self, document: Document) -> List:
         """Chunk the document and ensure deterministic IDs."""
         nodes = self.splitter.get_nodes_from_documents([document])
-        version = document.metadata.get("version", "0")
+        # Use page_id without version for consistent IDs across updates
         for idx, node in enumerate(nodes):
-            node.id_ = f"{document.doc_id}:{version}:{idx}"
+            node.id_ = f"{document.doc_id}:{idx}"
         return nodes
+
+    def _delete_page_vectors(self, page_id: str) -> None:
+        """Delete all existing vector embeddings for a given page."""
+        try:
+            # Delete vectors whose node IDs start with the page_id prefix
+            self.vector_store.delete(f"{page_id}")
+            logger.info("Deleted existing vectors for page %s", page_id)
+        except Exception as e:
+            logger.warning("Could not delete existing vectors for page %s: %s", page_id, e)
