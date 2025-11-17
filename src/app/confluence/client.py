@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup, Comment
 from ..config import Settings
 import re
 import html2text
+from markdownify import markdownify as mdf
 
 class ConfluenceClient:
     """Minimal Confluence Cloud REST client."""
@@ -44,9 +45,11 @@ class ConfluenceClient:
         """Convert Confluence storage HTML to readable text."""
         body_html = page_payload.get("body", {}).get("storage", {}).get("value", "")
 
-        soup = ConfluenceClient.clean_html(body_html)
-        md = ConfluenceClient.html_to_markdown(soup)
+        # soup = ConfluenceClient.clean_html(body_html)
+        # md = ConfluenceClient.html_to_markdown(soup)
         # md = ConfluenceClient.normalize_markdown(md)
+
+        md=mdf(body_html, strip=['ac:structured-macro']) 
 
         return md
 

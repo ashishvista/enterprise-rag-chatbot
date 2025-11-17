@@ -8,3 +8,4 @@ llama-index==0.10.55
 llama-index-vector-stores-postgres==0.1.9
 psycopg[binary]==3.1.18
 html2text==2025.4.15
+markdownify=1.2.2
