@@ -46,7 +46,7 @@ class ConfluenceClient:
 
         soup = ConfluenceClient.clean_html(body_html)
         md = ConfluenceClient.html_to_markdown(soup)
-        md = ConfluenceClient.normalize_markdown(md)
+        # md = ConfluenceClient.normalize_markdown(md)
 
         return md
 

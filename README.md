@@ -53,3 +53,8 @@ Confluence will send payloads containing `eventType` (e.g., `page_created`, `pag
 ## Next steps
 - Add webhook secret validation (X-Atlassian-Webhook-Identifier) for higher security.
 - Extend the service with a retrieval API or scheduled re-sync jobs.
+
+
+##clear cache using
+find . -name "__pycache__" -type d -prune -exec rm -rf {} +
+find . -name "*.pyc" -delete
