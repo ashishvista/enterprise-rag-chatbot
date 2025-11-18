@@ -48,7 +48,11 @@ class PageIngestionService:
         self._delete_page_vectors(page_id)
         
         document = Document(text=document_text, metadata=metadata, id_=str(page_id))
-        nodes = self._build_nodes(document)
+        try:
+            nodes = self._build_nodes(document)
+        except Exception as e:
+            logger.error("Failed to build nodes for page %s: %s", page_id, e, exc_info=True)
+            raise
         if not nodes:
             logger.warning("Page %s produced zero nodes after chunking", page_id)
             return
