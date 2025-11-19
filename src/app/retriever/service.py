@@ -5,14 +5,13 @@ import logging
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
-import psycopg
-
 from llama_index.core import QueryBundle
 from llama_index.core.postprocessor import SentenceTransformerRerank
 from llama_index.core.schema import NodeWithScore
 from llama_index.core.vector_stores.types import VectorStoreQuery, VectorStoreQueryResult
 
 from ..config import Settings
+from ..config.db import fetch_scalar
 from ..embeddings.ollama import OllamaBgeM3Embedding
 from ..embeddings.vector_store import create_pgvector_store
 
@@ -49,22 +48,22 @@ class RetrieverService:
 
         return bool(self._cached_count) and self._cached_count > 0
 
-    def refresh(self) -> int:
+    async def refresh(self) -> int:
         """Check the pgvector table for available nodes and cache the count."""
 
-        count = self._count_nodes()
+        count = await self._count_nodes()
         if count == 0:
             raise RuntimeError("No nodes found in the vector store; run ingestion first.")
         self._cached_count = count
         logger.info("Retriever ready with %s nodes in pgvector", count)
         return count
 
-    def retrieve(self, query: str, top_k: Optional[int] = None) -> RetrievalResult:
+    async def retrieve(self, query: str, top_k: Optional[int] = None) -> RetrievalResult:
         """Fetch top-K results from pgvector and rerank them."""
 
         if not self.is_ready():
             try:
-                self.refresh()
+                await self.refresh()
             except RuntimeError:
                 return RetrievalResult(reranked_nodes=[], raw_hits=[])
 
@@ -114,18 +113,10 @@ class RetrieverService:
             top_n=self.settings.reranker_top_n,
         )
 
-    def _count_nodes(self) -> int:
+    async def _count_nodes(self) -> int:
         settings = self.settings
         schema = settings.database_schema
         table = settings.vector_collection_with_prefix
         query = f"SELECT COUNT(*) FROM {schema}.{table}"
-
-        dsn = settings.sync_db_url()
-        if "+psycopg" in dsn:
-            dsn = dsn.replace("+psycopg", "", 1)
-
-        with psycopg.connect(dsn) as conn:
-            with conn.cursor() as cur:
-                cur.execute(query)
-                row = cur.fetchone()
-        return int(row[0]) if row else 0
+        result = await fetch_scalar(query, settings)
+        return int(result) if result is not None else 0

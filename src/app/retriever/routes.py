@@ -83,7 +83,7 @@ async def query_retriever(
             detail="top_k cannot exceed RETRIEVER_SEARCH_K",
         )
     try:
-        result: RetrievalResult = service.retrieve(payload.query, payload.top_k)
+        result: RetrievalResult = await service.retrieve(payload.query, payload.top_k)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive

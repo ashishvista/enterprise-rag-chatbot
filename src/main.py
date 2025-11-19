@@ -4,14 +4,14 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from .app.config import get_settings
+from .app.confluence import routes as confluence_routes
 from .app.retriever import router as retriever_router
-from .app.webhook import router as webhook_router
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Enterprise RAG Webhooks", version="0.1.0")
-    app.include_router(webhook_router)
+    app.include_router(confluence_routes.router)
     app.include_router(retriever_router)
 
     @app.get("/health", tags=["health"])
