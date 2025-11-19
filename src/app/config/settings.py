@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     chunk_size: int = 1024
     chunk_overlap: int = 100
     request_timeout: int = 30
+    retriever_top_k: int = 5
+    retriever_search_k: int = 15
+    reranker_model_name: str = "BAAI/bge-reranker-v2-m3"
+    reranker_top_n: int = 3
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -55,6 +59,18 @@ class Settings(BaseSettings):
         if not self.confluence_space_whitelist:
             return None
         return [space.strip() for space in self.confluence_space_whitelist.split(",") if space.strip()]
+
+    @model_validator(mode="after")
+    def _validate_retriever_settings(self) -> "Settings":
+        if self.retriever_top_k <= 0:
+            raise ValueError("retriever_top_k must be positive")
+        if self.retriever_search_k < self.retriever_top_k:
+            raise ValueError("retriever_search_k must be >= retriever_top_k")
+        if self.reranker_top_n <= 0:
+            raise ValueError("reranker_top_n must be positive")
+        if self.reranker_top_n > self.retriever_search_k:
+            raise ValueError("reranker_top_n cannot exceed retriever_search_k")
+        return self
 
     def async_db_url(self) -> str:
         """Return the asyncpg connection string."""
