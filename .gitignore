@@ -11,3 +11,4 @@ tmp/
 temp/
 *.swp
 __pycache__/
+venv/

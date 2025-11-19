@@ -1,13 +1,13 @@
 """Retriever that queries pgvector directly and reranks results."""
 from __future__ import annotations
 
-import importlib
 import logging
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
 import psycopg
 
+from llama_index.core.postprocessor import SentenceTransformerRerank
 from llama_index.core.schema import NodeWithScore
 from llama_index.core.vector_stores.types import VectorStoreQuery, VectorStoreQueryResult
 
@@ -16,22 +16,6 @@ from ..embeddings.ollama import OllamaBgeM3Embedding
 from ..embeddings.vector_store import create_pgvector_store
 
 logger = logging.getLogger(__name__)
-
-
-def _load_sentence_transformer_rerank():  # pragma: no cover - import helper
-    module_candidates = (
-        ("llama_index.postprocessor", "SentenceTransformerRerank"),
-        ("llama_index.postprocessor.sbert_rerank", "SentenceTransformerRerank"),
-    )
-    for module_name, attr in module_candidates:
-        try:
-            module = importlib.import_module(module_name)
-            return getattr(module, attr)
-        except (ImportError, AttributeError):
-            continue
-    raise ImportError(
-        "Install llama-index with the sentence-transformer reranker extra to enable reranking."
-    )
 
 
 @dataclass
@@ -123,9 +107,10 @@ class RetrieverService:
         return reranked[:top_n]
 
     def _init_reranker(self):
-        top_n = self.settings.reranker_top_n
-        rerank_cls = _load_sentence_transformer_rerank()
-        return rerank_cls(model=self.settings.reranker_model_name, top_n=top_n)
+        return SentenceTransformerRerank(
+            model=self.settings.reranker_model_name,
+            top_n=self.settings.reranker_top_n,
+        )
 
     def _count_nodes(self) -> int:
         settings = self.settings
