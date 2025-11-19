@@ -3,10 +3,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-import httpx
 from bs4 import BeautifulSoup, Comment
 
-from ..config import Settings
+from ..config import Settings, create_httpx_client
 import re
 import html2text
 from markdownify import markdownify as mdf
@@ -16,8 +15,8 @@ class ConfluenceClient:
 
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._client = httpx.Client(
-            base_url=settings.confluence_base_url.rstrip("/"),
+        self._client = create_httpx_client(
+            base_url=settings.confluence_base_url,
             auth=(settings.confluence_username, settings.confluence_api_token),
             timeout=settings.request_timeout,
         )

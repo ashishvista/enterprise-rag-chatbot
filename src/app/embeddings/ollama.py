@@ -9,6 +9,7 @@ from typing import Awaitable, Callable, List
 import httpx
 from llama_index.core.embeddings import BaseEmbedding
 
+from ..config import create_async_httpx_client, create_httpx_client
 
 class OllamaBgeM3Embedding(BaseEmbedding):
     """Custom embedding class that calls a running Ollama server."""
@@ -39,7 +40,7 @@ class OllamaBgeM3Embedding(BaseEmbedding):
     def _embed(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
-        with httpx.Client(base_url=self.base_url, timeout=self.timeout) as client:
+        with create_httpx_client(base_url=self.base_url, timeout=self.timeout) as client:
             return [self._embed_single_sync(client, text) for text in texts]
 
     def _embed_query(self, text: str) -> List[float]:
@@ -59,7 +60,7 @@ class OllamaBgeM3Embedding(BaseEmbedding):
     async def _aembed(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.timeout) as client:
+        async with create_async_httpx_client(base_url=self.base_url, timeout=self.timeout) as client:
             return [await self._embed_single_async(client, text) for text in texts]
 
     async def _aembed_query(self, text: str) -> List[float]:
