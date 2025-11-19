@@ -24,6 +24,8 @@ class PageIngestionService:
             base_url=settings.ollama_base_url,
             model_name=settings.embedding_model_name,
             timeout=settings.request_timeout,
+            max_retries=settings.embedding_max_retries,
+            retry_backoff=settings.embedding_retry_backoff,
         )
         self.splitter = self._build_chunker()
         self.vector_store = create_pgvector_store(settings)

@@ -1,7 +1,10 @@
 """LlamaIndex embedding wrapper for Ollama's bge-m3 model."""
 from __future__ import annotations
 
-from typing import List
+import asyncio
+import random
+import time
+from typing import Awaitable, Callable, List
 
 import httpx
 from llama_index.core.embeddings import BaseEmbedding
@@ -13,13 +16,24 @@ class OllamaBgeM3Embedding(BaseEmbedding):
     base_url: str
     model_name: str = "bge-m3"
     timeout: int = 30
+    max_retries: int = 3
+    retry_backoff: float = 0.5
 
-    def __init__(self, base_url: str, model_name: str = "bge-m3", timeout: int = 30):
+    def __init__(
+        self,
+        base_url: str,
+        model_name: str = "bge-m3",
+        timeout: int = 30,
+        max_retries: int = 3,
+        retry_backoff: float = 0.5,
+    ):
         super().__init__(
             base_url=base_url.rstrip("/"),
             model_name=model_name,
             timeout=timeout,
         )
+        self.max_retries = max(0, max_retries)
+        self.retry_backoff = max(0.0, retry_backoff)
 
     # ---- sync helpers -------------------------------------------------
     def _embed(self, texts: List[str]) -> List[List[float]]:
@@ -64,14 +78,24 @@ class OllamaBgeM3Embedding(BaseEmbedding):
     # ---- helpers -----------------------------------------------------
     def _embed_single_sync(self, client: httpx.Client, text: str) -> List[float]:
         payload = self._build_payload(text)
-        response = client.post("/api/embeddings", json=payload)
-        response.raise_for_status()
+
+        def _do_request() -> httpx.Response:
+            response = client.post("/api/embeddings", json=payload)
+            response.raise_for_status()
+            return response
+
+        response = self._retry_sync(_do_request)
         return self._extract_vector(response.json())
 
     async def _embed_single_async(self, client: httpx.AsyncClient, text: str) -> List[float]:
         payload = self._build_payload(text)
-        response = await client.post("/api/embeddings", json=payload)
-        response.raise_for_status()
+
+        async def _do_request() -> httpx.Response:
+            response = await client.post("/api/embeddings", json=payload)
+            response.raise_for_status()
+            return response
+
+        response = await self._retry_async(_do_request)
         data = response.json()
         return self._extract_vector(data)
 
@@ -86,3 +110,35 @@ class OllamaBgeM3Embedding(BaseEmbedding):
             if items and "embedding" in items[0]:
                 return items[0]["embedding"]
         raise ValueError(f"Ollama returned no embedding vectors: {data}")
+
+    def _retry_sync(self, fn: Callable[[], httpx.Response]) -> httpx.Response:
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                return fn()
+            except httpx.HTTPError as exc:  # transient Ollama server error
+                last_error = exc
+                if attempt == self.max_retries:
+                    raise
+                time.sleep(self._backoff_delay(attempt))
+        assert last_error is not None  # defensive: loop must either return or raise
+        raise last_error
+
+    async def _retry_async(self, fn: Callable[[], Awaitable[httpx.Response]]) -> httpx.Response:
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                return await fn()
+            except httpx.HTTPError as exc:  # transient Ollama server error
+                last_error = exc
+                if attempt == self.max_retries:
+                    raise
+                await asyncio.sleep(self._backoff_delay(attempt))
+        assert last_error is not None
+        raise last_error
+
+    def _backoff_delay(self, attempt: int) -> float:
+        if self.retry_backoff == 0:
+            return 0.0
+        base_delay = self.retry_backoff * (2 ** attempt)
+        return base_delay + random.uniform(0, self.retry_backoff)
