@@ -7,6 +7,7 @@ from typing import List, Optional, Sequence
 
 import psycopg
 
+from llama_index.core import QueryBundle
 from llama_index.core.postprocessor import SentenceTransformerRerank
 from llama_index.core.schema import NodeWithScore
 from llama_index.core.vector_stores.types import VectorStoreQuery, VectorStoreQueryResult
@@ -102,7 +103,8 @@ class RetrieverService:
             return nodes
         if not self._reranker:
             return nodes[:desired_top_k]
-        reranked = self._reranker.postprocess_nodes(list(nodes), query)
+        query_bundle = QueryBundle(query_str=query)
+        reranked = self._reranker.postprocess_nodes(list(nodes), query_bundle)
         top_n = min(self.settings.reranker_top_n, desired_top_k, len(reranked))
         return reranked[:top_n]
 
@@ -115,7 +117,7 @@ class RetrieverService:
     def _count_nodes(self) -> int:
         settings = self.settings
         schema = settings.database_schema
-        table = settings.vector_collection
+        table = settings.vector_collection_with_prefix
         query = f"SELECT COUNT(*) FROM {schema}.{table}"
 
         dsn = settings.sync_db_url()

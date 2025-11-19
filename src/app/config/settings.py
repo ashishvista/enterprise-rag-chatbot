@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     database_url: Optional[str] = None
     database_schema: str = "public"
     vector_collection: str = "confluence_pages"
+    vector_collection_with_prefix: str = "data_confluence_pages"
     chunk_size: int = 1024
     chunk_overlap: int = 100
     request_timeout: int = 30
@@ -70,6 +71,8 @@ class Settings(BaseSettings):
             raise ValueError("reranker_top_n must be positive")
         if self.reranker_top_n > self.retriever_search_k:
             raise ValueError("reranker_top_n cannot exceed retriever_search_k")
+        if not self.vector_collection_with_prefix:
+            raise ValueError("vector_collection_with_prefix must be set")
         return self
 
     def async_db_url(self) -> str:
