@@ -2,14 +2,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import random
 import time
+from pathlib import Path
 from typing import Awaitable, Callable, List
 
 import httpx
 from llama_index.core.embeddings import BaseEmbedding
 
 from ..config import create_async_httpx_client, create_httpx_client
+
+logger = logging.getLogger(__name__)
+
 
 class OllamaBgeM3Embedding(BaseEmbedding):
     """Custom embedding class that calls a running Ollama server."""
@@ -19,6 +25,7 @@ class OllamaBgeM3Embedding(BaseEmbedding):
     timeout: int = 30
     max_retries: int = 3
     retry_backoff: float = 0.5
+    failure_log_path: Path = Path("ollama_failed_payloads.log")
 
     def __init__(
         self,
@@ -27,14 +34,17 @@ class OllamaBgeM3Embedding(BaseEmbedding):
         timeout: int = 30,
         max_retries: int = 3,
         retry_backoff: float = 0.5,
+        failure_log_path: str | Path | None = None,
     ):
         super().__init__(
             base_url=base_url.rstrip("/"),
             model_name=model_name,
             timeout=timeout,
         )
-        self.max_retries = max(0, max_retries)
-        self.retry_backoff = max(0.0, retry_backoff)
+        object.__setattr__(self, "max_retries", max(0, max_retries))
+        object.__setattr__(self, "retry_backoff", max(0.0, retry_backoff))
+        if failure_log_path:
+            object.__setattr__(self, "failure_log_path", Path(failure_log_path))
 
     # ---- sync helpers -------------------------------------------------
     def _embed(self, texts: List[str]) -> List[List[float]]:
@@ -85,7 +95,7 @@ class OllamaBgeM3Embedding(BaseEmbedding):
             response.raise_for_status()
             return response
 
-        response = self._retry_sync(_do_request)
+        response = self._retry_sync(_do_request, payload)
         return self._extract_vector(response.json())
 
     async def _embed_single_async(self, client: httpx.AsyncClient, text: str) -> List[float]:
@@ -96,7 +106,7 @@ class OllamaBgeM3Embedding(BaseEmbedding):
             response.raise_for_status()
             return response
 
-        response = await self._retry_async(_do_request)
+        response = await self._retry_async(_do_request, payload)
         data = response.json()
         return self._extract_vector(data)
 
@@ -112,7 +122,7 @@ class OllamaBgeM3Embedding(BaseEmbedding):
                 return items[0]["embedding"]
         raise ValueError(f"Ollama returned no embedding vectors: {data}")
 
-    def _retry_sync(self, fn: Callable[[], httpx.Response]) -> httpx.Response:
+    def _retry_sync(self, fn: Callable[[], httpx.Response], payload: dict) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -120,12 +130,13 @@ class OllamaBgeM3Embedding(BaseEmbedding):
             except httpx.HTTPError as exc:  # transient Ollama server error
                 last_error = exc
                 if attempt == self.max_retries:
+                    self._record_failed_payload(payload, exc)
                     raise
                 time.sleep(self._backoff_delay(attempt))
         assert last_error is not None  # defensive: loop must either return or raise
         raise last_error
 
-    async def _retry_async(self, fn: Callable[[], Awaitable[httpx.Response]]) -> httpx.Response:
+    async def _retry_async(self, fn: Callable[[], Awaitable[httpx.Response]], payload: dict) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -133,6 +144,7 @@ class OllamaBgeM3Embedding(BaseEmbedding):
             except httpx.HTTPError as exc:  # transient Ollama server error
                 last_error = exc
                 if attempt == self.max_retries:
+                    self._record_failed_payload(payload, exc)
                     raise
                 await asyncio.sleep(self._backoff_delay(attempt))
         assert last_error is not None
@@ -143,3 +155,19 @@ class OllamaBgeM3Embedding(BaseEmbedding):
             return 0.0
         base_delay = self.retry_backoff * (2 ** attempt)
         return base_delay + random.uniform(0, self.retry_backoff)
+
+    def _record_failed_payload(self, payload: dict, error: Exception) -> None:
+        entry = {
+            "timestamp": time.time(),
+            "model": self.model_name,
+            "payload": payload,
+            "error": repr(error),
+        }
+        try:
+            path = self.failure_log_path
+            if path.parent and not path.parent.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(entry) + "\n")
+        except Exception:  # pragma: no cover - best-effort logging
+            logger.exception("Failed to record Ollama payload after retries exhausted")
