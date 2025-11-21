@@ -8,7 +8,6 @@ from typing import Dict, List, Optional, Sequence
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_community.llms.ollama import OllamaEndpointNotFoundError
 from llama_index.core.schema import NodeWithScore
 
 from ..config import Settings
@@ -94,22 +93,9 @@ class ChatbotService:
     async def _invoke_chain(self, inputs: Dict[str, object]) -> str:
         try:
             return await self._chain.ainvoke(inputs)
-        except OllamaEndpointNotFoundError as exc:
-            model_name = self._settings.llm_model_name
-            raise RuntimeError(
-                f"Ollama model '{model_name}' is unavailable. Pull it with 'ollama pull {model_name}' "
-                "or update LLM_MODEL_NAME."
-            ) from exc
         except (AttributeError, NotImplementedError):
             loop = asyncio.get_running_loop()
-            try:
-                return await loop.run_in_executor(None, lambda: self._chain.invoke(inputs))
-            except OllamaEndpointNotFoundError as exc:
-                model_name = self._settings.llm_model_name
-                raise RuntimeError(
-                    f"Ollama model '{model_name}' is unavailable. Pull it with 'ollama pull {model_name}' "
-                    "or update LLM_MODEL_NAME."
-                ) from exc
+            return await loop.run_in_executor(None, lambda: self._chain.invoke(inputs))
 
     def _to_langchain_messages(self, history: Sequence[ConversationMessage]) -> List[BaseMessage]:
         messages: List[BaseMessage] = []
