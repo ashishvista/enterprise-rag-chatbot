@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     retriever_search_k: int = 15
     reranker_model_name: str = "BAAI/bge-reranker-v2-m3"
     reranker_top_n: int = 3
+    langfuse_public_key: Optional[str] = None
+    langfuse_secret_key: Optional[str] = None
+    langfuse_host: Optional[str] = None
+    langfuse_environment: str = "production"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -88,6 +92,8 @@ class Settings(BaseSettings):
             raise ValueError("conversation_history_max_messages must be positive")
         if self.rag_context_max_chars_per_source <= 0:
             raise ValueError("rag_context_max_chars_per_source must be positive")
+        if bool(self.langfuse_public_key) ^ bool(self.langfuse_secret_key):
+            raise ValueError("Provide both LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY or neither")
         return self
 
     def async_db_url(self) -> str:

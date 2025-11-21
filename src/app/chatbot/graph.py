@@ -24,11 +24,18 @@ def build_chat_workflow(service: "ChatbotService"):
         if not sources and raw_hits:
             sources = raw_hits
         context = service._format_context(sources)
-        return {
+        result: ChatState = {
             "sources": sources,
             "raw_hits": raw_hits,
             "context": context,
         }
+        observer = state.get("observer")
+        if observer is not None:
+            before_snapshot = dict(state)
+            after_snapshot = dict(before_snapshot)
+            after_snapshot.update(result)
+            await observer.record_node("retrieve_context", before_snapshot, after_snapshot)
+        return result
 
     async def run_llm(state: ChatState) -> ChatState:
         prompt_inputs: Dict[str, object] = {
@@ -39,12 +46,26 @@ def build_chat_workflow(service: "ChatbotService"):
         }
         response_text = await service._invoke_chain(prompt_inputs)
         response_text = response_text.strip()
-        return {"response": response_text}
+        result = {"response": response_text}
+        observer = state.get("observer")
+        if observer is not None:
+            before_snapshot = dict(state)
+            after_snapshot = dict(before_snapshot)
+            after_snapshot.update(result)
+            await observer.record_node("run_llm", before_snapshot, after_snapshot)
+        return result
 
     async def store_response(state: ChatState) -> ChatState:
         response_text = state.get("response") or ""
         await service._history_store.add_message(state["session_id"], "assistant", response_text)
-        return {"response": response_text}
+        result = {"response": response_text}
+        observer = state.get("observer")
+        if observer is not None:
+            before_snapshot = dict(state)
+            after_snapshot = dict(before_snapshot)
+            after_snapshot.update(result)
+            await observer.record_node("store_response", before_snapshot, after_snapshot)
+        return result
 
     graph.add_node("retrieve_context", retrieve_context)
     graph.add_node("run_llm", run_llm)

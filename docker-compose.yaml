@@ -19,5 +19,56 @@ services:
       timeout: 5s
       retries: 5
 
+  langfuse:
+    image: langfuse/langfuse:3.131
+    container_name: langfuse
+    restart: unless-stopped
+    depends_on:
+      - pgvector-db
+      - redis
+      - clickhouse
+    environment:
+      DATABASE_URL: postgresql://rag_user:rag_password@pgvector-db:5432/rag
+      LANGFUSE_DATABASE_URL: postgresql://rag_user:rag_password@pgvector-db:5432/rag
+      LANGFUSE_DATABASE_SSL: "false"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      LANGFUSE_REDIS_HOST: redis
+      LANGFUSE_REDIS_PORT: "6379"
+      APP_BASE_URL: http://localhost:3100
+      LANGFUSE_APP_BASE_URL: http://localhost:3100
+      LANGFUSE_SSL_DISABLED: "true"
+      JWT_SECRET: ${LANGFUSE_JWT_SECRET:-changeme-jwt-secret}
+      LANGFUSE_JWT_SECRET: ${LANGFUSE_JWT_SECRET:-changeme-jwt-secret}
+      LANGFUSE_TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_URL: clickhouse://default:@clickhouse:9000/langfuse
+      LANGFUSE_CLICKHOUSE_URL: clickhouse://default:@clickhouse:9000/langfuse
+      CLICKHOUSE_HTTP_URL: http://default:@clickhouse:8123/langfuse
+    ports:
+      - "3100:3100"
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - langfuse-redis-data:/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: langfuse
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+
 volumes:
   pgvector-data:
+  langfuse-redis-data:
+  clickhouse-data:
+  clickhouse-logs:

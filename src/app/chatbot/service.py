@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -14,6 +14,7 @@ from ..config import Settings
 from ..conversation_history import ConversationHistoryStore, ConversationMessage
 from ..llm import create_chat_model
 from ..retriever.service import RetrieverService
+from ..observability import create_langfuse_observer
 from .graph import build_chat_workflow
 from .state import ChatState
 
@@ -69,12 +70,20 @@ class ChatbotService:
 
         await self._history_store.add_message(session_id, "user", user_message)
 
+        observer = create_langfuse_observer(
+            self._settings,
+            session_id=session_id,
+            user_message=user_message,
+        )
+
         initial_state: ChatState = {
             "session_id": session_id,
             "user_message": user_message,
             "top_k": top_k,
             "history_messages": history_messages,
         }
+        if observer is not None:
+            initial_state["observer"] = observer
 
         result_state = await self._workflow.ainvoke(initial_state)
 
@@ -82,6 +91,13 @@ class ChatbotService:
         sources = result_state.get("sources") or []
         raw_hits = result_state.get("raw_hits") or []
         context = result_state.get("context") or ""
+
+        if observer is not None:
+            combined_state: Dict[str, Any] = {
+                **{k: v for k, v in initial_state.items() if k != "observer"},
+                **{k: v for k, v in result_state.items() if k != "observer"},
+            }
+            await observer.finalize(combined_state)
 
         return ChatResult(
             session_id=session_id,
