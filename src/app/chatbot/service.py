@@ -14,6 +14,8 @@ from ..config import Settings
 from ..conversation_history import ConversationHistoryStore, ConversationMessage
 from ..llm import create_chat_model
 from ..retriever.service import RetrieverService
+from .graph import build_chat_workflow
+from .state import ChatState
 
 
 @dataclass
@@ -47,6 +49,7 @@ class ChatbotService:
             ]
         )
         self._chain = self._prompt | self._model | StrOutputParser()
+        self._workflow = build_chat_workflow(self)
 
     @property
     def settings(self) -> Settings:
@@ -62,25 +65,23 @@ class ChatbotService:
         previous_history = await self._history_store.fetch_recent_messages(
             session_id, self._settings.conversation_history_max_messages
         )
+        history_messages = self._to_langchain_messages(previous_history)
+
         await self._history_store.add_message(session_id, "user", user_message)
 
-        retrieval = await self._retriever.retrieve(user_message, top_k)
-        sources = list(retrieval.reranked_nodes or [])
-        raw_hits = list(retrieval.raw_hits)
-        if not sources and raw_hits:
-            sources = raw_hits
-        context = self._format_context(sources)
-
-        prompt_inputs: Dict[str, object] = {
-            "system_prompt": self._settings.chat_system_prompt,
-            "context": context or "No enterprise context retrieved.",
-            "history": self._to_langchain_messages(previous_history),
-            "question": user_message,
+        initial_state: ChatState = {
+            "session_id": session_id,
+            "user_message": user_message,
+            "top_k": top_k,
+            "history_messages": history_messages,
         }
 
-        response_text = await self._invoke_chain(prompt_inputs)
-        response_text = response_text.strip()
-        await self._history_store.add_message(session_id, "assistant", response_text)
+        result_state = await self._workflow.ainvoke(initial_state)
+
+        response_text = (result_state.get("response") or "").strip()
+        sources = result_state.get("sources") or []
+        raw_hits = result_state.get("raw_hits") or []
+        context = result_state.get("context") or ""
 
         return ChatResult(
             session_id=session_id,
@@ -136,3 +137,4 @@ class ChatbotService:
                 snippet = f"{snippet}\nMetadata: {metadata_str}"
             rendered.append(snippet)
         return "\n\n".join(rendered)
+
