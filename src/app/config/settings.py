@@ -20,6 +20,17 @@ class Settings(BaseSettings):
     embedding_dim: int = 1024  # bge-m3: 1024, qwen3-embedding:8b: 4096
     embedding_max_retries: int = 5
     embedding_retry_backoff: float = 0.5
+    llm_model_name: str = "gpt_oss"
+    llm_temperature: float = 0.1
+    llm_max_output_tokens: Optional[int] = None
+    llm_context_window: Optional[int] = None
+    chat_system_prompt: str = (
+        "You are an enterprise-ready assistant. Always ground answers in the provided "
+        "context. If the context does not contain the answer, say you do not know."
+    )
+    conversation_history_table: str = "chatbot_conversation_history"
+    conversation_history_max_messages: int = 20
+    rag_context_max_chars_per_source: int = 1200
     use_semantic_chunker: bool = False
     semantic_chunker_buffer_size: int = 1
     semantic_chunker_breakpoint_percentile: int = 95
@@ -73,6 +84,10 @@ class Settings(BaseSettings):
             raise ValueError("reranker_top_n cannot exceed retriever_search_k")
         if not self.vector_collection_with_prefix:
             raise ValueError("vector_collection_with_prefix must be set")
+        if self.conversation_history_max_messages <= 0:
+            raise ValueError("conversation_history_max_messages must be positive")
+        if self.rag_context_max_chars_per_source <= 0:
+            raise ValueError("rag_context_max_chars_per_source must be positive")
         return self
 
     def async_db_url(self) -> str:

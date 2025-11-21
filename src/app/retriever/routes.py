@@ -1,31 +1,19 @@
 """FastAPI routes for testing retriever results."""
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..config import Settings, get_settings
+from .dependencies import get_retriever_service
 from .service import RetrievalResult, RetrieverService
 from llama_index.core.schema import NodeWithScore
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/retriever", tags=["retriever"])
-
-
-_retriever_cache: Optional[Tuple[str, RetrieverService]] = None
-
-
-def get_retriever_service(settings: Settings = Depends(get_settings)) -> RetrieverService:
-    global _retriever_cache
-    signature = json.dumps(settings.model_dump(mode="json"), sort_keys=True)
-    if _retriever_cache is None or _retriever_cache[0] != signature:
-        _retriever_cache = (signature, RetrieverService(settings))
-    return _retriever_cache[1]
 
 
 class RetrieveRequest(BaseModel):

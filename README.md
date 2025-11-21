@@ -8,6 +8,7 @@ FastAPI service that ingests Confluence page creation + update webhooks, fetches
 - Custom LlamaIndex embedding class that calls the local Ollama endpoint for `bge-m3` embeddings.
 - Vectors persisted to Postgres via `PGVectorStore` with deterministic node IDs for idempotent upserts.
 - Docker Compose recipe for `pgvector/pgvector:pg16` plus `.env.example` documenting all configuration keys.
+- `/chatbot/respond` endpoint uses LangChain, Ollama chat models, and pgvector-backed retrieval with database-backed conversation history.
 
 ## Prerequisites
 - Python 3.11+
@@ -46,6 +47,14 @@ The server exposes `/webhook/confluence` and `/health`. Point the Confluence web
 | `DATABASE_URL` | Sync psycopg connection string. Provide this **or** `DATABASE_URL_ASYNC`; the missing one is auto-derived. |
 | `DATABASE_SCHEMA` | Postgres schema the vector table lives in (defaults to `public`). |
 | `VECTOR_COLLECTION` | Table name used by `PGVectorStore`. |
+| `LLM_MODEL_NAME` | Ollama chat model used for generation (e.g., `gpt_oss`, `qwen2`). |
+| `LLM_TEMPERATURE` | Decoding temperature passed to the chat model. |
+| `LLM_MAX_OUTPUT_TOKENS` | Optional max tokens per response (forwarded to Ollama). |
+| `LLM_CONTEXT_WINDOW` | Optional context window override for the chat model. |
+| `CHAT_SYSTEM_PROMPT` | System prompt that primes the assistant. |
+| `CONVERSATION_HISTORY_TABLE` | Postgres table used to persist chat history. |
+| `CONVERSATION_HISTORY_MAX_MESSAGES` | Max historical turns loaded into the LangChain prompt. |
+| `RAG_CONTEXT_MAX_CHARS_PER_SOURCE` | Max characters per retrieved chunk injected into the prompt. |
 
 ## Triggering ingestion
 Confluence will send payloads containing `eventType` (e.g., `page_created`, `page_updated`). The webhook handler acknowledges immediately (HTTP 202) and performs ingestion asynchronously. Logs describe each page's ingestion lifecycle.
