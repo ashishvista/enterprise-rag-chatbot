@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     use_semantic_chunker: bool = False
     semantic_chunker_buffer_size: int = 1
     semantic_chunker_breakpoint_percentile: int = 95
-    database_url_async: Optional[str] = None
     database_url: Optional[str] = None
     database_schema: str = "public"
     vector_collection: str = "confluence_pages"
@@ -54,20 +53,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")
-    def _ensure_database_urls(self) -> "Settings":
-        """Guarantee at least one DB URL is present and derive/normalize the other."""
-        if not self.database_url_async and not self.database_url:
-            raise ValueError("Set DATABASE_URL_ASYNC or DATABASE_URL in the environment.")
-
-        if self.database_url:
-            self.database_url = normalize_sync_connection_string(self.database_url)
-        if self.database_url_async:
-            self.database_url_async = normalize_async_connection_string(self.database_url_async)
-
-        if not self.database_url_async and self.database_url:
-            self.database_url_async = infer_async_connection_string(self.database_url)
-        if not self.database_url and self.database_url_async:
-            self.database_url = infer_sync_connection_string(self.database_url_async)
+    def _ensure_database_url(self) -> "Settings":
+        if not self.database_url:
+            raise ValueError("Set DATABASE_URL in the environment.")
         return self
 
     def allowed_spaces(self) -> Optional[list[str]]:
@@ -96,13 +84,8 @@ class Settings(BaseSettings):
             raise ValueError("Provide both LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY or neither")
         return self
 
-    def async_db_url(self) -> str:
-        """Return the asyncpg connection string."""
-        assert self.database_url_async  # ensured via validator
-        return self.database_url_async
-
-    def sync_db_url(self) -> str:
-        """Return a psycopg connection string, deriving from async if needed."""
+    def base_db_url(self) -> str:
+        """Return the base Postgres URL from the environment."""
         assert self.database_url  # ensured via validator
         return self.database_url
 
@@ -111,35 +94,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Cached settings accessor."""
     return Settings()  # type: ignore[call-arg]
-
-
-def infer_sync_connection_string(async_url: str) -> str:
-    """Best-effort conversion from asyncpg URL to psycopg equivalent."""
-    return normalize_sync_connection_string(async_url)
-
-
-def infer_async_connection_string(sync_url: str) -> str:
-    """Best-effort conversion from psycopg URL to asyncpg equivalent."""
-    return normalize_async_connection_string(sync_url)
-
-
-def normalize_sync_connection_string(url: str) -> str:
-    """Ensure the SQLAlchemy URL uses the psycopg (sync) driver."""
-    if "+psycopg" in url:
-        return url
-    if "+asyncpg" in url:
-        return url.replace("+asyncpg", "+psycopg", 1)
-    if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+psycopg://", 1)
-    return url
-
-
-def normalize_async_connection_string(url: str) -> str:
-    """Ensure the SQLAlchemy URL uses the asyncpg driver."""
-    if "+asyncpg" in url:
-        return url
-    if "+psycopg" in url:
-        return url.replace("+psycopg", "+asyncpg", 1)
-    if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return url

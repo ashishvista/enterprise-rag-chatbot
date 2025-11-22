@@ -24,26 +24,35 @@ services:
     container_name: langfuse
     restart: unless-stopped
     depends_on:
-      - pgvector-db
-      - redis
-      - clickhouse
+      pgvector-db:
+        condition: service_started
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://rag_user:rag_password@pgvector-db:5432/rag
-      LANGFUSE_DATABASE_URL: postgresql://rag_user:rag_password@pgvector-db:5432/rag
-      LANGFUSE_DATABASE_SSL: "false"
+      DATABASE_URL: postgresql://rag_user:rag_password@pgvector-db:5432/langfuse
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      LANGFUSE_REDIS_HOST: redis
-      LANGFUSE_REDIS_PORT: "6379"
       APP_BASE_URL: http://localhost:3100
       LANGFUSE_APP_BASE_URL: http://localhost:3100
+      SSL_DISABLED: "true"
       LANGFUSE_SSL_DISABLED: "true"
       JWT_SECRET: ${LANGFUSE_JWT_SECRET:-changeme-jwt-secret}
       LANGFUSE_JWT_SECRET: ${LANGFUSE_JWT_SECRET:-changeme-jwt-secret}
+      NEXTAUTH_SECRET: ${LANGFUSE_JWT_SECRET:-changeme-jwt-secret}
+      NEXTAUTH_URL: http://localhost:3100
+      TELEMETRY_ENABLED: "false"
       LANGFUSE_TELEMETRY_ENABLED: "false"
-      CLICKHOUSE_URL: clickhouse://default:@clickhouse:9000/langfuse
-      LANGFUSE_CLICKHOUSE_URL: clickhouse://default:@clickhouse:9000/langfuse
-      CLICKHOUSE_HTTP_URL: http://default:@clickhouse:8123/langfuse
+      CLICKHOUSE_URL: clickhouse://default:password@clickhouse:9000/langfuse
+      LANGFUSE_CLICKHOUSE_URL: clickhouse://default:password@clickhouse:9000/langfuse
+      CLICKHOUSE_HTTP_URL: http://default:password@clickhouse:8123/langfuse
+      CLICKHOUSE_MIGRATION_URL: clickhouse://default:password@clickhouse:9000/langfuse
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: "password"
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      CLICKHOUSE_CLUSTER_NAME: default
+      SALT: ${LANGFUSE_SALT:-changeme-salt}
     ports:
       - "3100:3100"
 
@@ -59,16 +68,21 @@ services:
     image: clickhouse/clickhouse-server:24.8
     container_name: clickhouse
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host 127.0.0.1 --user default --password password --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     environment:
       CLICKHOUSE_DB: langfuse
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_PASSWORD: "password"
     volumes:
-      - clickhouse-data:/var/lib/clickhouse
-      - clickhouse-logs:/var/log/clickhouse-server
+      - clickhouse-data2:/var/lib/clickhouse
+      - clickhouse-logs2:/var/log/clickhouse-server
 
 volumes:
   pgvector-data:
   langfuse-redis-data:
-  clickhouse-data:
-  clickhouse-logs:
+  clickhouse-data2:
+  clickhouse-logs2:
