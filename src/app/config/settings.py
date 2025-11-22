@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     conversation_history_table: str = "chatbot_conversation_history"
     conversation_history_max_messages: int = 20
     rag_context_max_chars_per_source: int = 1200
+    chatbot_workflow_mermaid_path: Optional[str] = None
     use_semantic_chunker: bool = False
     semantic_chunker_buffer_size: int = 1
     semantic_chunker_breakpoint_percentile: int = 95

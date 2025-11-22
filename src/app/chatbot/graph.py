@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Dict, Sequence
+import os
+from typing import TYPE_CHECKING, Dict, Optional, Sequence
 
 from langgraph.graph import END, START, StateGraph
 from langchain_core.tools import BaseTool
 
 from .state import ChatState
+
+_MERMAID_PATH_ENV = "CHATBOT_WORKFLOW_MERMAID_PATH"
 
 if TYPE_CHECKING:  # pragma: no cover - for type hints only
     from .service import ChatbotService
@@ -18,6 +21,29 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
 
     graph = StateGraph(ChatState)
     tool_map = {tool.name: tool for tool in tools}
+
+    def _resolve_diagram_path(settings: "ChatbotService".settings.__class__) -> Optional[str]:
+        if getattr(settings, "chatbot_workflow_mermaid_path", None):
+            return settings.chatbot_workflow_mermaid_path
+        env_path = os.getenv(_MERMAID_PATH_ENV)
+        if env_path:
+            return env_path
+        return None
+
+    def _write_mermaid_png(compiled_graph, settings: "ChatbotService".settings.__class__) -> None:
+        diagram_path = _resolve_diagram_path(settings)
+        if not diagram_path:
+            return
+
+        from pathlib import Path
+
+        try:
+            path = Path(diagram_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            png_bytes = compiled_graph.get_graph().draw_mermaid_png()
+            path.write_bytes(png_bytes)
+        except Exception:  # pragma: no cover - visualization is best effort
+            pass
 
     async def retrieve_context(state: ChatState) -> ChatState:
         top_k = state.get("top_k")
@@ -180,4 +206,8 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
     graph.add_edge("compose_tool_response", "store_response")
     graph.add_edge("store_response", END)
 
-    return graph.compile()
+    compiled_graph = graph.compile()
+
+    _write_mermaid_png(compiled_graph, service.settings)
+
+    return compiled_graph

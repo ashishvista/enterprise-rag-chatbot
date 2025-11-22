@@ -1,40 +1,32 @@
-"""News tool returning recent headlines for a location."""
+"""Toy news tool that fabricates lighthearted headlines."""
 from __future__ import annotations
 
 import datetime as _dt
-from typing import List
+import random
 
 from langchain_core.tools import tool
 
-# Placeholder in-memory feed for demonstration purposes.
-_SAMPLE_HEADLINES = {
-    "new york": [
-        "Local Tech Conference Highlights AI Safety Initiatives",
-        "City Council Advances Sustainable Transit Plan",
-        "Community Gardens Expand Across Boroughs",
-    ],
-    "san francisco": [
-        "Bay Area Startups Secure Record Funding",
-        "Golden Gate Bridge Maintenance Scheduled Overnight",
-        "Local Artists Lead Waterfront Revitalization",
-    ],
-}
+_HEADLINE_TEMPLATES = [
+    "{place} startups unveil quirky AI side projects",
+    "Community leaders in {place} rally for greener office rooftops",
+    "Coffee aficionados declare {place} the new remote-work capital",
+    "Transit pilots keep {place} commuters smiling",
+    "{place} engineers host pop-up hackathon on sustainability",
+    "Local artists in {place} blend murals with augmented reality",
+]
 
 
 @tool("get_news")
 def get_news(location: str) -> str:
-    """Return a short list of recent headlines mentioning the location."""
+    """Return a few playful, randomly generated headlines for the location."""
 
-    if not location:
-        return "Provide a city or region to look up related headlines."
+    place_raw = location.strip()
+    if not place_raw:
+        place_raw = "your city"
 
-    normalized = location.lower().strip()
-    headlines: List[str] | None = _SAMPLE_HEADLINES.get(normalized)
-    if headlines is None:
-        headlines = [
-            f"No curated headlines for '{location}'. Check major outlets for the latest updates.",
-        ]
-
+    place_display = place_raw.title()
     date_str = _dt.datetime.utcnow().strftime("%Y-%m-%d")
+    picks = random.sample(_HEADLINE_TEMPLATES, k=3)
+    headlines = [headline.format(place=place_display) for headline in picks]
     formatted = "\n".join(f"- {headline}" for headline in headlines)
-    return f"Top news for {location} on {date_str}:\n{formatted}"
+    return f"Top news for {place_display} on {date_str}:\n{formatted}"
