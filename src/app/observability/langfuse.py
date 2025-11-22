@@ -90,7 +90,10 @@ def _get_langfuse_client(
         logger.warning("Langfuse package not installed; observability is disabled")
         return None
     try:
-        return _Langfuse(public_key=public_key, secret_key=secret_key, host=host or "https://cloud.langfuse.com")
+        init_kwargs = {"public_key": public_key, "secret_key": secret_key}
+        if host:
+            init_kwargs["base_url"] = host
+        return _Langfuse(**init_kwargs)
     except Exception:  # pragma: no cover - best effort guard
         logger.exception("Failed to initialize Langfuse client")
         return None
@@ -113,43 +116,76 @@ class LangfuseObserver:
         self._session_id = session_id
         self._environment = environment
         self._sequence = 0
+        self._root_span: Optional[Any] = None
+        self._root_span_id: Optional[str] = None
         self._initialize_trace(initial_state)
 
     def _initialize_trace(self, initial_state: Dict[str, Any]) -> None:
-        self._client.trace(
-            id=self._trace_id,
-            name="chatbot_session",
-            user_id=self._session_id,
-            metadata={
-                "environment": self._environment,
-                **_serialize_state(initial_state),
-            },
-        )
+        try:
+            state_payload = _serialize_state(initial_state)
+            metadata = {"environment": self._environment, "session_id": self._session_id}
+            root_span = self._client.start_span(
+                name="chatbot_session",
+                trace_context={"trace_id": self._trace_id},
+                input={"state": state_payload},
+                metadata=metadata,
+            )
+            root_span.update_trace(
+                name="chatbot_session",
+                user_id=self._session_id,
+                session_id=self._session_id,
+                input={"state": state_payload},
+                metadata=metadata,
+            )
+            self._root_span = root_span
+            self._root_span_id = root_span.id
+        except Exception:  # pragma: no cover - best effort guard
+            logger.exception("Failed to initialize Langfuse root span")
+            self._root_span = None
+            self._root_span_id = None
 
     async def record_node(self, name: str, before: Dict[str, Any], after: Dict[str, Any]) -> None:
         await asyncio.to_thread(self._record_node_sync, name, before, after)
 
     def _record_node_sync(self, name: str, before: Dict[str, Any], after: Dict[str, Any]) -> None:
+        if self._root_span_id is None:
+            return
         self._sequence += 1
-        self._client.span(
-            trace_id=self._trace_id,
-            name=f"chatbot.{name}",
-            input={"state": _serialize_state(before)},
-            output={"state": _serialize_state(after)},
-            metadata={"order": self._sequence},
-        )
+        try:
+            span = self._client.start_span(
+                name=f"chatbot.{name}",
+                trace_context={
+                    "trace_id": self._trace_id,
+                    "parent_span_id": self._root_span_id,
+                },
+                input={"state": _serialize_state(before)},
+                output={"state": _serialize_state(after)},
+                metadata={"order": self._sequence},
+            )
+            span.end()
+        except Exception:  # pragma: no cover - best effort guard
+            logger.exception("Failed to record Langfuse span for node %s", name)
 
     async def finalize(self, final_state: Dict[str, Any]) -> None:
         await asyncio.to_thread(self._finalize_sync, final_state)
 
     def _finalize_sync(self, final_state: Dict[str, Any]) -> None:
-        self._client.trace(
-            id=self._trace_id,
-            name="chatbot_session",
-        ).update(
-            output=_serialize_state(final_state),
-        )
-        self._client.flush()
+        if self._root_span is None:
+            return
+        try:
+            serialized = _serialize_state(final_state)
+            self._root_span.update(output={"state": serialized})
+            self._root_span.update_trace(output={"state": serialized})
+            self._root_span.end()
+            self._root_span = None
+            self._root_span_id = None
+        except Exception:  # pragma: no cover - best effort guard
+            logger.exception("Failed to finalize Langfuse trace")
+        finally:
+            try:
+                self._client.flush()
+            except Exception:  # pragma: no cover - best effort guard
+                logger.exception("Failed to flush Langfuse client")
 
 
 def create_langfuse_observer(
@@ -170,7 +206,7 @@ def create_langfuse_observer(
     )
     if client is None:
         return None
-    trace_id = f"chatbot-{session_id}-{uuid.uuid4()}"
+    trace_id = uuid.uuid4().hex
     initial_state = {"session_id": session_id, "user_message": user_message}
     return LangfuseObserver(
         client=client,
