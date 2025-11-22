@@ -6,6 +6,7 @@ from typing import Optional
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine.url import URL, make_url
 
 
 class Settings(BaseSettings):
@@ -88,6 +89,23 @@ class Settings(BaseSettings):
         """Return the base Postgres URL from the environment."""
         assert self.database_url  # ensured via validator
         return self.database_url
+
+    def _render_db_url(self, drivername: str) -> str:
+        assert self.database_url
+        url = make_url(self.database_url)
+        return url.set(drivername=drivername).render_as_string(hide_password=False)
+
+    def sync_db_url(self) -> str:
+        """Return a SQLAlchemy sync driver URL for Postgres."""
+        return self._render_db_url("postgresql+psycopg")
+
+    def async_db_url(self) -> str:
+        """Return a SQLAlchemy async driver URL for Postgres."""
+        return self._render_db_url("postgresql+asyncpg")
+
+    def psycopg_dsn(self) -> str:
+        """Return a psycopg-compatible DSN for Postgres."""
+        return self._render_db_url("postgresql")
 
 
 @lru_cache()
