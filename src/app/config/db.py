@@ -20,24 +20,9 @@ def _url_to_string(url: URL) -> str:
     return url.render_as_string(hide_password=False)
 
 
-def _apply_host_override(url: URL) -> URL:
-    host_override = os.getenv("DATABASE_HOST_OVERRIDE")
-    if host_override:
-        return url.set(host=host_override)
-
-    host = url.host
-    if host and host in DEFAULT_SERVICE_HOSTS:
-        try:
-            socket.getaddrinfo(host, None)
-        except socket.gaierror:
-            return url.set(host="localhost")
-    return url
-
-
 def to_sync_sqlalchemy_url(base_url: str) -> str:
     """Convert the base Postgres URL to a SQLAlchemy sync driver URL."""
     url = make_url(base_url)
-    url = _apply_host_override(url)
     sync_url = _url_to_string(url.set(drivername="postgresql+psycopg"))
     return sync_url
 
@@ -45,7 +30,6 @@ def to_sync_sqlalchemy_url(base_url: str) -> str:
 def to_async_sqlalchemy_url(base_url: str) -> str:
     """Convert the base Postgres URL to a SQLAlchemy async driver URL."""
     url = make_url(base_url)
-    url = _apply_host_override(url)
     async_url = _url_to_string(url.set(drivername="postgresql+asyncpg"))
     return async_url
 
@@ -53,7 +37,6 @@ def to_async_sqlalchemy_url(base_url: str) -> str:
 def to_psycopg_dsn(base_url: str) -> str:
     """Produce a psycopg-compatible DSN from the base Postgres URL."""
     url = make_url(base_url)
-    url = _apply_host_override(url)
     dsn = _url_to_string(url.set(drivername="postgresql"))
     return dsn
 
