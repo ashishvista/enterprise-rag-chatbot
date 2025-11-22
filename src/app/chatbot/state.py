@@ -17,3 +17,6 @@ class ChatState(TypedDict, total=False):
     context: str
     response: str
     observer: Any
+    tool_request: dict[str, Any]
+    tool_result: Any
+    tool_name: Optional[str]

@@ -56,6 +56,8 @@ class ChatResponse(BaseModel):
     response: str
     context: str
     sources: List[SourceDocument]
+    tool_name: Optional[str] = Field(None, description="Name of the tool invoked, if any.")
+    tool_result: Optional[str] = Field(None, description="Raw output returned by the invoked tool.")
 
 
 def _serialize_sources(nodes: Sequence[NodeWithScore]) -> List[SourceDocument]:
@@ -109,4 +111,6 @@ async def respond(
         response=result.response,
         context=result.context,
         sources=sources,
+        tool_name=result.tool_name,
+        tool_result=result.tool_result,
     )

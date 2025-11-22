@@ -70,6 +70,12 @@ def _serialize_state(state: Dict[str, Any]) -> Dict[str, Any]:
         payload["sources"] = _serialize_nodes(state["sources"])
     if "raw_hits" in state and state["raw_hits"]:
         payload["raw_hits"] = _serialize_nodes(state["raw_hits"])
+    if state.get("tool_request"):
+        payload["tool_request"] = state["tool_request"]
+    if state.get("tool_result") is not None:
+        payload["tool_result"] = state["tool_result"]
+    if state.get("tool_name"):
+        payload["tool_name"] = state["tool_name"]
     return payload
 
 

@@ -9,6 +9,7 @@ FastAPI service that ingests Confluence page creation + update webhooks, fetches
 - Vectors persisted to Postgres via `PGVectorStore` with deterministic node IDs for idempotent upserts.
 - Docker Compose recipe for `pgvector/pgvector:pg16` plus `.env.example` documenting all configuration keys.
 - `/chatbot/respond` endpoint uses LangChain, Ollama chat models, and pgvector-backed retrieval with database-backed conversation history.
+- Tool-aware chatbot can call weather and news helpers via LangGraph when real-time info is requested.
 
 ## Prerequisites
 - Python 3.11+
