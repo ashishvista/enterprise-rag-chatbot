@@ -142,9 +142,9 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
 
     async def compose_tool_response(state: ChatState) -> ChatState:
         tool_request = state.get("tool_request") or {}
-        tool_name = tool_request.get("tool")
+        tool_name = state.get("tool_name")
         tool_result = state.get("tool_result")
-        context = state.get("context") or "No enterprise context retrieved."
+        context = state.get("context") or ""
         tool_context = ""
         if tool_name and tool_result:
             tool_context = f"\n\nTool {tool_name} output:\n{tool_result}"
@@ -159,9 +159,9 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
         response_text = response_text.strip()
         result: ChatState = {
             "response": response_text,
-            # "tool_request": None,
-            # "tool_result": tool_result,
-            # "tool_name": tool_name,
+            "tool_request": None,
+            "tool_result": None,
+            "tool_name": None,
         }
         observer = state.get("observer")
         if observer is not None:
