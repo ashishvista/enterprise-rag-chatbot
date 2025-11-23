@@ -75,11 +75,14 @@ class RetrieverService:
             VectorStoreQuery(query_embedding=query_embedding, similarity_top_k=search_k)
         )
         raw_hits = self._nodes_from_result(result)
+        raw_hits = self._filter_by_score(raw_hits, self.settings.retriever_min_score)
         if not raw_hits:
             return RetrievalResult(reranked_nodes=[], raw_hits=[])
 
         reranked = self._apply_reranker(raw_hits, query, desired_top_k)
-        return RetrievalResult(reranked_nodes=reranked, raw_hits=raw_hits[:search_k])
+        reranked = list(self._filter_by_score(reranked, self.settings.reranker_min_score))
+        raw_hits_sliced = raw_hits[:search_k]
+        return RetrievalResult(reranked_nodes=reranked, raw_hits=raw_hits_sliced)
 
     # ------------------------------------------------------------------
     def _nodes_from_result(self, result: VectorStoreQueryResult) -> List[NodeWithScore]:
@@ -106,6 +109,18 @@ class RetrieverService:
         reranked = self._reranker.postprocess_nodes(list(nodes), query_bundle)
         top_n = min(self.settings.reranker_top_n, desired_top_k, len(reranked))
         return reranked[:top_n]
+
+    def _filter_by_score(
+        self, nodes: Sequence[NodeWithScore], threshold: Optional[float]
+    ) -> List[NodeWithScore]:
+        if threshold is None:
+            return list(nodes)
+        filtered: List[NodeWithScore] = []
+        for node_with_score in nodes:
+            score = getattr(node_with_score, "score", None)
+            if score is None or score >= threshold:
+                filtered.append(node_with_score)
+        return filtered
 
     def _init_reranker(self):
         return SentenceTransformerRerank(

@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     retriever_search_k: int = 15
     reranker_model_name: str = "BAAI/bge-reranker-v2-m3"
     reranker_top_n: int = 3
+    retriever_min_score: Optional[float] = None
+    reranker_min_score: Optional[float] = None
     langfuse_public_key: Optional[str] = None
     langfuse_secret_key: Optional[str] = None
     langfuse_host: Optional[str] = None
