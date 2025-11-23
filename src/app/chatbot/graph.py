@@ -130,6 +130,7 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
         result: ChatState = {
             "tool_result": tool_output,
             "tool_name": tool_name,
+            "tool_request": None
         }
         observer = state.get("observer")
         if observer is not None:
@@ -192,8 +193,10 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
     def _tool_decision(state: ChatState) -> str:
         return "invoke" if state.get("tool_request") else "store"
 
-    graph.add_edge(START, "retrieve_context")
-    graph.add_edge("retrieve_context", "run_llm")
+    # graph.add_edge(START, "retrieve_context")
+    # graph.add_edge("retrieve_context", "run_llm")
+    graph.add_edge(START, "run_llm")
+
     graph.add_edge("run_llm", "parse_tool")
     graph.add_conditional_edges(
         "parse_tool",
@@ -206,14 +209,6 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
     graph.add_edge("invoke_tool", "compose_tool_response")
     graph.add_edge("compose_tool_response", "parse_tool")
 
-    graph.add_conditional_edges(
-        "parse_tool",
-        _tool_decision,
-        {
-            "invoke": "invoke_tool",
-            "store": "store_response",
-        },
-    )
     # graph.add_edge("compose_tool_response", "store_response")
     graph.add_edge("store_response", END)
 
