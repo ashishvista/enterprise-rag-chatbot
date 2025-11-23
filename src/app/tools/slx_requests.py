@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 
 _AD_GROUPS = {
@@ -67,12 +68,32 @@ def _parse_date(value: str, label: str) -> Optional[_dt.date]:
         raise ValueError(f"Please supply {label} in YYYY-MM-DD format.")
 
 
+class SlxRaiseInput(BaseModel):
+    """Schema for creating SLX access requests."""
+
+    employee_id: str = Field(..., description="Employee ID requesting temporary AD group access.")
+    ad_group: Optional[str] = Field(
+        None,
+        description="Name of the AD group to request access for (see available list).",
+    )
+    start_date: Optional[str] = Field(
+        None,
+        description="Access start date in YYYY-MM-DD format (must be in the future).",
+    )
+    end_date: Optional[str] = Field(
+        None,
+        description="Access end date in YYYY-MM-DD format (≤30 days after start_date).",
+    )
+
+
 @tool(
     "natwest_slx_raise",
     description=(
-        "Raise an SLX request for NatWest role-based access. Requires employee_id, AD group, "
-        "start_date, and end_date. Dates must be future-dated and the window must not exceed 30 days."
+        "Raise an SLX request for NatWest role-based access. Required argument: employee_id (string). "
+        "Optional arguments: ad_group (string), start_date (YYYY-MM-DD), end_date (YYYY-MM-DD). "
+        "Dates must be future-dated and the window must not exceed 30 days."
     ),
+    args_schema=SlxRaiseInput,
 )
 def raise_slx_request(
     employee_id: str,
@@ -138,11 +159,19 @@ def raise_slx_request(
     )
 
 
+class SlxStatusInput(BaseModel):
+    """Schema for retrieving SLX request status."""
+
+    reference_id: str = Field(..., description="SLX reference identifier returned when the request was raised.")
+
+
 @tool(
     "natwest_slx_status",
     description=(
-        "Check the status of a previously raised SLX request using its reference ID."
+        "Check the status of a previously raised SLX request using its reference ID. Required argument: "
+        "reference_id (string)."
     ),
+    args_schema=SlxStatusInput,
 )
 def get_slx_request_status(
     reference_id: str,

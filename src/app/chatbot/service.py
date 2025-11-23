@@ -188,6 +188,21 @@ class ChatbotService:
         ]
         for tool in self._tools:
             description = getattr(tool, "description", "") or "No description provided."
-            lines.append(f"- {tool.name}: {description}")
+            schema_details = self._describe_tool_args(tool)
+            lines.append(f"- {tool.name}: {description}{schema_details}")
         return "\n".join(lines)
+
+    def _describe_tool_args(self, tool: BaseTool) -> str:
+        args_schema = getattr(tool, "args_schema", None)
+        if args_schema is None:
+            return ""
+        fields = []
+        for field_name, field_info in args_schema.model_fields.items():
+            type_name = getattr(field_info.annotation, "__name__", str(field_info.annotation))
+            required = "required" if field_info.is_required() else "optional"
+            description = field_info.description or "No description provided."
+            fields.append(f"    - {field_name} ({type_name}, {required}): {description}")
+        if not fields:
+            return ""
+        return "\n" + "\n".join(fields)
 

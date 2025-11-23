@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 
 @dataclass
@@ -52,12 +53,24 @@ def _format_status_list(complaints: List[_Complaint]) -> str:
     return "\n\n".join(c.render_summary() for c in complaints)
 
 
+class SpeakUpRaiseInput(BaseModel):
+    """Schema for collecting Speak Up complaint details."""
+
+    employee_id: str = Field(..., description="Reporter employee ID raising the concern.")
+    accused_employee_id: str = Field(..., description="Employee ID of the colleague being reported.")
+    complaint_details: str = Field(
+        ...,
+        description="Detailed description of the suspected fraudulent activity.",
+    )
+
+
 @tool(
     "natwest_speak_up_raise",
     description=(
-        "Raise an internal fraud complaint via the NatWest Speak Up programme. "
-        "Provide reporter employee_id, accused_employee_id, and a detailed description."
+        "Raise an internal fraud complaint via the NatWest Speak Up programme. Required arguments: "
+        "employee_id (string), accused_employee_id (string), complaint_details (string)."
     ),
+    args_schema=SpeakUpRaiseInput,
 )
 def raise_speak_up_complaint(
     employee_id: str,
@@ -93,12 +106,27 @@ def raise_speak_up_complaint(
     )
 
 
+class SpeakUpStatusInput(BaseModel):
+    """Schema for querying Speak Up complaint progress."""
+
+    employee_id: Optional[str] = Field(
+        None,
+        description="Reporter employee ID associated with the complaint (optional).",
+    )
+    complaint_id: Optional[str] = Field(
+        None,
+        description="Specific Speak Up complaint identifier (optional).",
+    )
+
+
 @tool(
     "natwest_speak_up_status",
     description=(
         "Check the current status of a Speak Up complaint using either the reporter's "
-        "employee ID or a specific complaint ID."
+        "employee ID or a specific complaint ID. At least one argument is required: "
+        "employee_id (string) or complaint_id (string)."
     ),
+    args_schema=SpeakUpStatusInput,
 )
 def get_speak_up_status(
     employee_id: Optional[str] = None,
@@ -120,12 +148,23 @@ def get_speak_up_status(
     return _format_status_list(matches)
 
 
+class SpeakUpWithdrawInput(BaseModel):
+    """Schema for withdrawing Speak Up complaints."""
+
+    complaint_id: str = Field(..., description="Identifier of the Speak Up complaint to withdraw.")
+    employee_id: Optional[str] = Field(
+        None,
+        description="Reporter employee ID for optional validation.",
+    )
+
+
 @tool(
     "natwest_speak_up_withdraw",
     description=(
-        "Withdraw an existing Speak Up complaint. Provide the complaint ID; optionally "
-        "confirm the reporter's employee ID for validation."
+        "Withdraw an existing Speak Up complaint. Required argument: complaint_id (string). "
+        "Optional argument: employee_id (string) for reporter verification."
     ),
+    args_schema=SpeakUpWithdrawInput,
 )
 def withdraw_speak_up_complaint(
     complaint_id: str,

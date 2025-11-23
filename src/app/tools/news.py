@@ -5,6 +5,7 @@ import datetime as _dt
 import random
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 _CATEGORY_TEMPLATES = {
     "Top Headlines": [
@@ -35,7 +36,24 @@ _CATEGORY_TEMPLATES = {
 }
 
 
-@tool("get_news")
+class GetNewsInput(BaseModel):
+    """Schema for NatWest news requests."""
+
+    location: str = Field(
+        ...,
+        description="City, region, or market to tailor the NatWest news digest to.",
+    )
+
+
+@tool(
+    "get_news",
+    args_schema=GetNewsInput,
+    description=(
+        "Return a NatWest-only news digest covering Top Headlines, Corporate News, Finance News, "
+        "Share Market News, and General News for the requested location. Required argument: "
+        "location (string)."
+    ),
+)
 def get_news(location: str) -> str:
     """Return a NatWest-only news digest covering multiple categories for the given location."""
 

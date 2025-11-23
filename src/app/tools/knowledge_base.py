@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Sequence
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 from ..config import Settings, get_settings
 from ..retriever.service import RetrieverService, SerializedNode
@@ -35,13 +36,23 @@ def _render_nodes(nodes: Sequence[SerializedNode]) -> str:
     return "\n\n".join(parts)
 
 
+class KnowledgeBaseInput(BaseModel):
+    """Schema defining NatWest knowledge base lookup parameters."""
+
+    query: str = Field(
+        ...,
+        description="Natural language question to search the NatWest knowledge base with.",
+    )
+
+
 @tool(
     "natwest_knowledge_base",
     description=(
         "Access the NatWest enterprise knowledge base covering finance, careers, "
-        "employee programs, HR, payroll, and related internal topics. Provide a "
-        "natural language question to retrieve the most relevant information."
+        "employee programs, HR, payroll, and related internal topics. Required argument: "
+        "query (string)."
     ),
+    args_schema=KnowledgeBaseInput,
 )
 async def query_natwest_knowledge_base(query: str) -> str:
     """Return a formatted answer by retrieving NatWest enterprise context."""
