@@ -158,9 +158,9 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
         response_text = response_text.strip()
         result: ChatState = {
             "response": response_text,
-            "tool_request": None,
-            "tool_result": tool_result,
-            "tool_name": tool_name,
+            # "tool_request": None,
+            # "tool_result": tool_result,
+            # "tool_name": tool_name,
         }
         observer = state.get("observer")
         if observer is not None:
@@ -182,7 +182,7 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
             await observer.record_node("store_response", before_snapshot, after_snapshot)
         return result
 
-    graph.add_node("retrieve_context", retrieve_context)
+    # graph.add_node("retrieve_context", retrieve_context)
     graph.add_node("run_llm", run_llm)
     graph.add_node("parse_tool", parse_tool)
     graph.add_node("invoke_tool", invoke_tool)
@@ -204,7 +204,17 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
         },
     )
     graph.add_edge("invoke_tool", "compose_tool_response")
-    graph.add_edge("compose_tool_response", "store_response")
+    graph.add_edge("compose_tool_response", "parse_tool")
+
+    graph.add_conditional_edges(
+        "parse_tool",
+        _tool_decision,
+        {
+            "invoke": "invoke_tool",
+            "store": "store_response",
+        },
+    )
+    # graph.add_edge("compose_tool_response", "store_response")
     graph.add_edge("store_response", END)
 
     compiled_graph = graph.compile()
