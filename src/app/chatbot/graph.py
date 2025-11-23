@@ -68,7 +68,9 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
     async def run_llm(state: ChatState) -> ChatState:
         prompt_inputs: Dict[str, object] = {
             "system_prompt": service.settings.chat_system_prompt,
-            "context": state.get("context") or "No enterprise context retrieved.",
+            # "context": state.get("context") or "No enterprise context retrieved.",
+            "context": state.get("context") or "",
+
             "history": state.get("history_messages", []),
             "question": state["user_message"],
             "tool_instructions": service.tool_instructions,
