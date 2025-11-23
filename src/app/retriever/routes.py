@@ -1,6 +1,7 @@
 """FastAPI routes for testing retriever results."""
 from __future__ import annotations
 
+from dataclasses import asdict
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -9,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from .dependencies import get_retriever_service
 from .service import RetrievalResult, RetrieverService
-from llama_index.core.schema import NodeWithScore
 
 logger = logging.getLogger(__name__)
 
@@ -38,28 +38,6 @@ class RetrieveResponse(BaseModel):
     results: List[RetrievedNode]
 
 
-def _serialize_node(node_with_score: NodeWithScore) -> RetrievedNode:
-    node = node_with_score.node
-    node_id = getattr(node, "node_id", None) or getattr(node, "id_", None) or getattr(node, "doc_id", None)
-    try:
-        text = node.get_content()  # type: ignore[attr-defined]
-    except AttributeError:
-        text = getattr(node, "text", "") or ""
-    metadata = getattr(node, "metadata", None)
-    if metadata is None:
-        metadata_dict: Dict[str, Any] | None = None
-    elif isinstance(metadata, dict):
-        metadata_dict = metadata
-    else:
-        metadata_dict = dict(metadata)
-    return RetrievedNode(
-        node_id=str(node_id or ""),
-        score=float(node_with_score.score),
-        text=text,
-        metadata=metadata_dict,
-    )
-
-
 @router.post("/query", response_model=RetrieveResponse)
 async def query_retriever(
     payload: RetrieveRequest, service: RetrieverService = Depends(get_retriever_service)
@@ -78,7 +56,8 @@ async def query_retriever(
         logger.exception("Retriever query failed")
         raise HTTPException(status_code=500, detail="Retriever query failed") from exc
 
-    hits = [_serialize_node(node) for node in result.reranked_nodes]
+    serialized_hits = [service.serialize_node(node) for node in result.reranked_nodes]
+    hits = [RetrievedNode(**asdict(item)) for item in serialized_hits]
     return RetrieveResponse(
         top_k=desired_top_k,
         total_hits=len(result.raw_hits),

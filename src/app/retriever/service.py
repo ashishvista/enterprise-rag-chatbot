@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from llama_index.core import QueryBundle
 from llama_index.core.postprocessor import SentenceTransformerRerank
@@ -24,6 +24,16 @@ class RetrievalResult:
 
     reranked_nodes: Sequence[NodeWithScore]
     raw_hits: Sequence[NodeWithScore]
+
+
+@dataclass
+class SerializedNode:
+    """Normalized representation of a retrieved node for external consumers."""
+
+    node_id: str
+    score: float
+    text: str
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class RetrieverService:
@@ -85,6 +95,28 @@ class RetrieverService:
         return RetrievalResult(reranked_nodes=reranked, raw_hits=raw_hits_sliced)
 
     # ------------------------------------------------------------------
+    def serialize_node(self, node_with_score: NodeWithScore) -> SerializedNode:
+        node = node_with_score.node
+        node_id = getattr(node, "node_id", None) or getattr(node, "id_", None) or getattr(node, "doc_id", None)
+        try:
+            text = node.get_content()  # type: ignore[attr-defined]
+        except AttributeError:
+            text = getattr(node, "text", "") or ""
+        metadata = getattr(node, "metadata", None)
+        if metadata is None:
+            metadata_dict: Optional[Dict[str, Any]] = None
+        elif isinstance(metadata, dict):
+            metadata_dict = metadata
+        else:
+            metadata_dict = dict(metadata)
+        score = float(node_with_score.score) if node_with_score.score is not None else 0.0
+        return SerializedNode(
+            node_id=str(node_id or ""),
+            score=score,
+            text=text,
+            metadata=metadata_dict,
+        )
+
     def _nodes_from_result(self, result: VectorStoreQueryResult) -> List[NodeWithScore]:
         nodes = list(result.nodes or [])
         similarities = result.similarities or []

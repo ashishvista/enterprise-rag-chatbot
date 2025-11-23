@@ -5,10 +5,9 @@ from functools import lru_cache
 from typing import Sequence
 
 from langchain_core.tools import tool
-from llama_index.core.schema import NodeWithScore
 
 from ..config import Settings, get_settings
-from ..retriever.service import RetrieverService
+from ..retriever.service import RetrieverService, SerializedNode
 
 
 @lru_cache(maxsize=1)
@@ -21,22 +20,17 @@ def _settings_signature(settings: Settings) -> str:
     return settings.model_dump_json(sort_keys=True)
 
 
-def _render_nodes(nodes: Sequence[NodeWithScore]) -> str:
+def _render_nodes(nodes: Sequence[SerializedNode]) -> str:
     if not nodes:
         return "No relevant NatWest knowledge was found for that query."
 
     parts = []
-    for idx, node_with_score in enumerate(nodes, start=1):
-        node = node_with_score.node
-        try:
-            content = node.get_content()  # type: ignore[attr-defined]
-        except AttributeError:
-            content = getattr(node, "text", "")
-        content = (content or "").strip()
+    for idx, serialized in enumerate(nodes, start=1):
+        content = (serialized.text or "").strip()
         if len(content) > 500:
             content = content[:497].rstrip() + "..."
-        score = getattr(node_with_score, "score", None)
-        header = f"Result {idx}" if score is None else f"Result {idx} (score={score:.3f})"
+        score = serialized.score
+        header = f"Result {idx} (score={score:.3f})"
         parts.append(f"{header}\n{content}")
     return "\n\n".join(parts)
 
@@ -66,10 +60,11 @@ async def query_natwest_knowledge_base(query: str) -> str:
     except Exception:  # pragma: no cover - defensive guard
         return "Failed to query the NatWest knowledge base due to an internal error."
 
-    sources: Sequence[NodeWithScore] = result.reranked_nodes or result.raw_hits
+    sources = result.reranked_nodes or result.raw_hits
     if not sources and result.raw_hits:
         sources = result.raw_hits
 
     sources = list(sources)[:3]
 
-    return _render_nodes(sources)
+    serialized = [retriever.serialize_node(node) for node in sources]
+    return _render_nodes(serialized)

@@ -50,8 +50,7 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
         retrieval = await service._retriever.retrieve(state["user_message"], top_k)
         sources = list(retrieval.reranked_nodes or [])
         raw_hits = list(retrieval.raw_hits)
-        if not sources and raw_hits:
-            sources = raw_hits
+
         context = service._format_context(sources)
         result: ChatState = {
             "sources": sources,
