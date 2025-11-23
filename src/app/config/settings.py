@@ -30,8 +30,7 @@ class Settings(BaseSettings):
         "conversation history and retrieved documents carefully, cite the facts you rely on, "
         "and keep responses concise and professional. If the supplied context does not "
         "contain an answer, acknowledge the gap and offer to help source the information. "
-        "When a question is vague or incomplete, ask the user to clarify or provide more "
-        "detail before proceeding."
+       
     )
     conversation_history_table: str = "chatbot_conversation_history"
     conversation_history_max_messages: int = 20

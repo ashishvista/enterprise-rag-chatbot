@@ -76,6 +76,8 @@ def _serialize_state(state: Dict[str, Any]) -> Dict[str, Any]:
         payload["tool_result"] = state["tool_result"]
     if state.get("tool_name"):
         payload["tool_name"] = state["tool_name"]
+    if state.get("llm_input"):
+        payload["llm_input"] = _truncate(str(state["llm_input"]), 4000)
     return payload
 
 

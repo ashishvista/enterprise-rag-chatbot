@@ -47,6 +47,7 @@ class ChatbotService:
         self._model = create_chat_model(settings)
         self._tools: List[BaseTool] = list(get_default_tools())
         self._tool_instructions = self._build_tool_instructions()
+        self._parser = StrOutputParser()
         self._prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", "{system_prompt}"),
@@ -56,7 +57,6 @@ class ChatbotService:
                 ("human", "{question}"),
             ]
         )
-        self._chain = self._prompt | self._model | StrOutputParser()
         self._workflow = build_chat_workflow(self, self._tools)
 
     @property
@@ -128,12 +128,24 @@ class ChatbotService:
             tool_result=tool_result_value,
         )
 
-    async def _invoke_chain(self, inputs: Dict[str, object]) -> str:
+    def _render_prompt(self, inputs: Dict[str, object]) -> tuple[str, List[BaseMessage]]:
+        prompt_value = self._prompt.format_prompt(**inputs)
+        prompt_messages = prompt_value.to_messages()
         try:
-            return await self._chain.ainvoke(inputs)
+            prompt_text = prompt_value.to_string()
+        except AttributeError:
+            prompt_text = "\n".join(f"{message.type}: {message.content}" for message in prompt_messages)
+        return prompt_text, prompt_messages
+
+    async def _invoke_chain(self, inputs: Dict[str, object]) -> tuple[str, str]:
+        prompt_text, prompt_messages = self._render_prompt(inputs)
+        try:
+            response = await self._model.ainvoke(prompt_messages)
         except (AttributeError, NotImplementedError):
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, lambda: self._chain.invoke(inputs))
+            response = await loop.run_in_executor(None, lambda: self._model.invoke(prompt_messages))
+        output_text = self._parser.invoke(response)
+        return prompt_text, output_text
 
     def _to_langchain_messages(self, history: Sequence[ConversationMessage]) -> List[BaseMessage]:
         messages: List[BaseMessage] = []

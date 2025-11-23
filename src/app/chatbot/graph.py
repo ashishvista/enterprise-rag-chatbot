@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from langchain_core.tools import BaseTool
 
 from .state import ChatState
+from ..config import Settings
 
 _MERMAID_PATH_ENV = "CHATBOT_WORKFLOW_MERMAID_PATH"
 
@@ -22,7 +23,7 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
     graph = StateGraph(ChatState)
     tool_map = {tool.name: tool for tool in tools}
 
-    def _resolve_diagram_path(settings: "ChatbotService".settings.__class__) -> Optional[str]:
+    def _resolve_diagram_path(settings: Settings) -> Optional[str]:
         if getattr(settings, "chatbot_workflow_mermaid_path", None):
             return settings.chatbot_workflow_mermaid_path
         env_path = os.getenv(_MERMAID_PATH_ENV)
@@ -30,7 +31,7 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
             return env_path
         return None
 
-    def _write_mermaid_png(compiled_graph, settings: "ChatbotService".settings.__class__) -> None:
+    def _write_mermaid_png(compiled_graph, settings: Settings) -> None:
         diagram_path = _resolve_diagram_path(settings)
         if not diagram_path:
             return
@@ -68,16 +69,16 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
     async def run_llm(state: ChatState) -> ChatState:
         prompt_inputs: Dict[str, object] = {
             "system_prompt": service.settings.chat_system_prompt,
-            # "context": state.get("context") or "No enterprise context retrieved.",
-            "context": state.get("context") or "",
+            "context": state.get("context") or "No enterprise context retrieved.",
+            # "context": state.get("context") or "",
 
             "history": state.get("history_messages", []),
             "question": state["user_message"],
             "tool_instructions": service.tool_instructions,
         }
-        response_text = await service._invoke_chain(prompt_inputs)
+        prompt_text, response_text = await service._invoke_chain(prompt_inputs)
         response_text = response_text.strip()
-        result = {"response": response_text}
+        result = {"response": response_text, "llm_input": prompt_text}
         observer = state.get("observer")
         if observer is not None:
             before_snapshot = dict(state)
@@ -102,6 +103,8 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
             "tool_request": tool_request,
             "tool_result": None,
             "tool_name": tool_name,
+            "llm_input": None,
+            
         }
         observer = state.get("observer")
         if observer is not None:
@@ -130,7 +133,8 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
         result: ChatState = {
             "tool_result": tool_output,
             "tool_name": tool_name,
-            "tool_request": None
+            "tool_request": None,
+             "llm_input": None
         }
         observer = state.get("observer")
         if observer is not None:
@@ -144,7 +148,7 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
         tool_request = state.get("tool_request") or {}
         tool_name = state.get("tool_name")
         tool_result = state.get("tool_result")
-        context = state.get("context") or ""
+        context = state.get("context") or "No enterprise context retrieved."
         tool_context = ""
         if tool_name and tool_result:
             tool_context = f"\n\nTool {tool_name} output:\n{tool_result}"
@@ -155,13 +159,14 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
             "question": state["user_message"],
             "tool_instructions": service.tool_instructions,
         }
-        response_text = await service._invoke_chain(prompt_inputs)
+        prompt_text, response_text = await service._invoke_chain(prompt_inputs)
         response_text = response_text.strip()
         result: ChatState = {
             "response": response_text,
             "tool_request": None,
             "tool_result": None,
             "tool_name": None,
+            "llm_input": prompt_text,
         }
         observer = state.get("observer")
         if observer is not None:
@@ -174,7 +179,7 @@ def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
     async def store_response(state: ChatState) -> ChatState:
         response_text = state.get("response") or ""
         await service._history_store.add_message(state["session_id"], "assistant", response_text)
-        result = {"response": response_text}
+        result = {"response": response_text, "llm_input": None}
         observer = state.get("observer")
         if observer is not None:
             before_snapshot = dict(state)
