@@ -1,6 +1,7 @@
 """LangChain chat model factory for Ollama-backed models."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -10,6 +11,15 @@ from langchain_ollama import ChatOllama
 from langchain_community.llms.ollama import OllamaEndpointNotFoundError
 
 from ..config import Settings
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 
 class SafeChatOllama(ChatOllama):
@@ -22,6 +32,23 @@ class SafeChatOllama(ChatOllama):
     def _handle_missing_model(self, error: Exception) -> None:
         raise RuntimeError(self._missing_model_message) from error
 
+    def _log_result(self, result: ChatResult) -> None:
+        try:
+            messages = []
+            for generation in result.generations:
+                text = getattr(generation, "text", None)
+                if text:
+                    messages.append(text)
+                    continue
+                message = getattr(generation, "message", None)
+                content = getattr(message, "content", None) if message is not None else None
+                if content:
+                    messages.append(str(content))
+            if messages:
+                logger.info("Ollama raw response: %s", messages[0])
+        except Exception:  # pragma: no cover - logging should not break inference
+            logger.exception("Failed to log Ollama response")
+
     def _generate(
         self,
         messages: List[Any],
@@ -30,7 +57,9 @@ class SafeChatOllama(ChatOllama):
         **kwargs: Any,
     ) -> ChatResult:
         try:
-            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            self._log_result(result)
+            return result
         except OllamaEndpointNotFoundError as exc:
             self._handle_missing_model(exc)
 
@@ -46,12 +75,14 @@ class SafeChatOllama(ChatOllama):
             if "config" in kwargs:
                 kwargs = dict(kwargs)
                 kwargs.pop("config", None)
-            return await super()._agenerate(
+            result = await super()._agenerate(
                 messages,
                 stop=stop,
                 run_manager=run_manager,
                 **kwargs,
             )
+            self._log_result(result)
+            return result
         except OllamaEndpointNotFoundError as exc:
             self._handle_missing_model(exc)
 
