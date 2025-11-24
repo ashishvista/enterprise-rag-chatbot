@@ -84,12 +84,11 @@ def raise_speak_up_complaint(
     details = (complaint_details or "").strip()
 
     if not reporter:
-        return "Please supply your employee ID so the Speak Up team can follow up confidentially."
+        return "Error: Please supply your employee ID so the Speak Up team can follow up confidentially."
     if not accused:
-        return "Please provide the employee ID of the colleague you believe is involved in fraud."
+        return "Error: Please provide the employee ID of the colleague you believe is involved in fraud."
     if len(details) < 25:
-        return "Please describe the concern in at least a few sentences so it can be investigated properly."
-
+        return "Error: Please describe the concern in at least a few sentences so it can be investigated properly."
     complaint_id = _generate_complaint_id()
     complaint = _Complaint(
         complaint_id=complaint_id,
