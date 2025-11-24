@@ -1,22 +1,30 @@
-"""Shared state definitions for the chatbot workflow."""
+"""Typed state definition for the LangGraph-powered agent."""
 from __future__ import annotations
 
-from typing import Any, List, Optional, Sequence, TypedDict
+from typing import Any, Dict, List
 
-from langchain_core.messages import BaseMessage
-from llama_index.core.schema import NodeWithScore
+from typing_extensions import Annotated, TypedDict
+
+from langchain_core.messages import AnyMessage
+from langgraph.graph import add_messages
 
 
-class ChatState(TypedDict, total=False):
-    session_id: str
-    user_message: str
-    top_k: Optional[int]
-    history_messages: Sequence[BaseMessage]
-    sources: List[NodeWithScore]
-    raw_hits: List[NodeWithScore]
-    context: str
-    response: str
-    observer: Any
-    tool_request: dict[str, Any]
-    tool_result: Any
-    tool_name: Optional[str]
+def append_invocations(
+    existing: List[Dict[str, Any]] | None,
+    new: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Append tool invocation summaries to the running list."""
+    combined = list(existing or [])
+    combined.extend(new)
+    return combined
+
+
+class AgentState(TypedDict, total=False):
+    """Canonical state shared across LangGraph nodes."""
+
+    messages: Annotated[List[AnyMessage], add_messages]
+    llm_input: List[AnyMessage]
+    pending_tool_calls: List[Dict[str, Any]]
+    tool_calls: List[Dict[str, Any]]
+    raw_llm_response: str
+    tool_invocations: Annotated[List[Dict[str, Any]], append_invocations]

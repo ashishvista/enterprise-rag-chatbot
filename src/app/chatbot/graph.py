@@ -1,224 +1,299 @@
-"""LangGraph workflow definition for the chatbot service."""
+"""LangGraph application that mirrors LangChain's AgentExecutor flow."""
 from __future__ import annotations
 
 import json
-import os
-from typing import TYPE_CHECKING, Dict, Optional, Sequence
+import logging
+from typing import Any, Dict, Iterable, List, Sequence
 
-from langgraph.graph import END, START, StateGraph
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
+from langgraph.graph import END, StateGraph
 
-from .state import ChatState
-from ..config import Settings
+from .state import AgentState
 
-_MERMAID_PATH_ENV = "CHATBOT_WORKFLOW_MERMAID_PATH"
-
-if TYPE_CHECKING:  # pragma: no cover - for type hints only
-    from .service import ChatbotService
+logger = logging.getLogger(__name__)
 
 
-def build_chat_workflow(service: "ChatbotService", tools: Sequence[BaseTool]):
-    """Return a compiled LangGraph workflow bound to the provided service."""
+def _stringify(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = [_stringify(item) for item in value]
+        return "\n".join(part for part in parts if part)
+    try:
+        return json.dumps(value, ensure_ascii=True)
+    except TypeError:
+        return str(value)
 
-    graph = StateGraph(ChatState)
-    tool_map = {tool.name: tool for tool in tools}
 
-    def _resolve_diagram_path(settings: Settings) -> Optional[str]:
-        if getattr(settings, "chatbot_workflow_mermaid_path", None):
-            return settings.chatbot_workflow_mermaid_path
-        env_path = os.getenv(_MERMAID_PATH_ENV)
-        if env_path:
-            return env_path
-        return None
+def _build_tool_map(tools: Sequence[BaseTool]) -> Dict[str, BaseTool]:
+    return {tool.name: tool for tool in tools}
 
-    def _write_mermaid_png(compiled_graph, settings: Settings) -> None:
-        diagram_path = _resolve_diagram_path(settings)
-        if not diagram_path:
-            return
 
-        from pathlib import Path
-
-        try:
-            path = Path(diagram_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            png_bytes = compiled_graph.get_graph().draw_mermaid_png()
-            path.write_bytes(png_bytes)
-        except Exception:  # pragma: no cover - visualization is best effort
-            pass
-
-    async def retrieve_context(state: ChatState) -> ChatState:
-        top_k = state.get("top_k")
-        retrieval = await service._retriever.retrieve(state["user_message"], top_k)
-        sources = list(retrieval.reranked_nodes or [])
-        raw_hits = list(retrieval.raw_hits)
-
-        context = service._format_context(sources)
-        result: ChatState = {
-            "sources": sources,
-            "raw_hits": raw_hits,
-            "context": context,
-        }
-        observer = state.get("observer")
-        if observer is not None:
-            before_snapshot = dict(state)
-            after_snapshot = dict(before_snapshot)
-            after_snapshot.update(result)
-            await observer.record_node("retrieve_context", before_snapshot, after_snapshot)
-        return result
-
-    async def run_llm(state: ChatState) -> ChatState:
-        prompt_inputs: Dict[str, object] = {
-            "system_prompt": service.settings.chat_system_prompt,
-            "context": state.get("context") or "No enterprise context retrieved.",
-            # "context": state.get("context") or "",
-
-            "history": state.get("history_messages", []),
-            "question": state["user_message"],
-            "tool_instructions": service.tool_instructions,
-        }
-        prompt_text, response_text = await service._invoke_chain(prompt_inputs)
-        response_text = response_text.strip()
-        result = {"response": response_text, "llm_input": prompt_text}
-        observer = state.get("observer")
-        if observer is not None:
-            before_snapshot = dict(state)
-            after_snapshot = dict(before_snapshot)
-            after_snapshot.update(result)
-            await observer.record_node("run_llm", before_snapshot, after_snapshot)
-        return result
-
-    async def parse_tool(state: ChatState) -> ChatState:
-        response_text = state.get("response") or ""
-        tool_request = None
-        if response_text:
-            try:
-                parsed = json.loads(response_text)
-                if isinstance(parsed, dict) and "tool" in parsed:
-                    tool_request = parsed
-            except json.JSONDecodeError:
-                tool_request = None
-
-        tool_name = tool_request.get("tool") if tool_request else None
-        result: ChatState = {
-            "tool_request": tool_request,
-            "tool_result": None,
-            "tool_name": tool_name,
-            "llm_input": None,
-            
-        }
-        observer = state.get("observer")
-        if observer is not None:
-            before_snapshot = dict(state)
-            after_snapshot = dict(before_snapshot)
-            after_snapshot.update(result)
-            await observer.record_node("parse_tool", before_snapshot, after_snapshot)
-        return result
-
-    async def invoke_tool(state: ChatState) -> ChatState:
-        request = state.get("tool_request") or {}
-        tool_name = request.get("tool")
-        args = request.get("args") or {}
-        tool = tool_map.get(tool_name)
-        if tool is None:
-            tool_output = f"Requested tool '{tool_name}' is unavailable."
+def _normalise_tool_calls(raw_calls: Iterable[Any]) -> tuple[List[Dict[str, Any]], List[Any]]:
+    cleaned: List[Dict[str, Any]] = []
+    raw_list: List[Any] = []
+    for call in raw_calls or []:
+        raw_list.append(call)
+        function = getattr(call, "function", None)
+        if function is None and isinstance(call, dict):
+            function = call.get("function")
+        name = getattr(function, "name", None)
+        if name is None and isinstance(call, dict):
+            name = call.get("name")
+        if name is None and isinstance(function, dict):
+            name = function.get("name")
+        call_id = getattr(call, "id", None)
+        if call_id is None and isinstance(call, dict):
+            call_id = call.get("id") or call.get("tool_call_id")
+        arguments = getattr(function, "arguments", None)
+        if arguments is None and isinstance(function, dict):
+            arguments = function.get("arguments")
+        if isinstance(arguments, bytes):
+            arguments = arguments.decode("utf-8", "ignore")
+        if isinstance(arguments, str):
+            arguments_text = arguments
         else:
             try:
-                tool_output = await tool.ainvoke(args)
-            except NotImplementedError:
-                tool_output = tool.invoke(args)
-            except Exception as exc:  # pragma: no cover - tool execution guard
-                tool_output = f"Tool '{tool_name}' failed: {exc}"
-        if not isinstance(tool_output, str):
-            tool_output = str(tool_output)
-        result: ChatState = {
-            "tool_result": tool_output,
-            "tool_name": tool_name,
-            "tool_request": None,
-             "llm_input": None
+                arguments_text = json.dumps(arguments or {}, ensure_ascii=True)
+            except TypeError:
+                arguments_text = str(arguments)
+        cleaned.append({
+            "id": str(call_id or ""),
+            "name": str(name or ""),
+            "arguments": arguments_text,
+        })
+    return cleaned, raw_list
+
+
+def _extract_call_details(call: Any) -> tuple[str, str, Any]:
+    function = getattr(call, "function", None)
+    if function is None and isinstance(call, dict):
+        function = call.get("function")
+    name = getattr(function, "name", None)
+    if name is None and isinstance(call, dict):
+        name = call.get("name")
+    if name is None and isinstance(function, dict):
+        name = function.get("name")
+    call_id = getattr(call, "id", None)
+    if call_id is None and isinstance(call, dict):
+        call_id = call.get("id") or call.get("tool_call_id")
+    arguments = getattr(function, "arguments", None)
+    if arguments is None and isinstance(function, dict):
+        arguments = function.get("arguments")
+    if isinstance(arguments, bytes):
+        arguments = arguments.decode("utf-8", "ignore")
+    return str(call_id or ""), str(name or ""), arguments or {}
+
+
+def _coerce_arguments(arguments: Any) -> tuple[Dict[str, Any], str]:
+    if isinstance(arguments, str):
+        text = arguments or "{}"
+        try:
+            parsed = json.loads(text) if text.strip() else {}
+        except json.JSONDecodeError as exc:
+            raise ValueError(text) from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(text)
+        return parsed, text
+    if isinstance(arguments, dict):
+        return arguments, json.dumps(arguments, ensure_ascii=True)
+    raise ValueError(str(arguments))
+
+
+def _format_result(value: Any) -> str:
+    if value is None:
+        return ""
+    return _stringify(value)
+
+
+def create_agent_app(llm: BaseChatModel, tools: Sequence[BaseTool]):
+    """Compile the LangGraph workflow with LLM and tool bindings."""
+
+    tool_map = _build_tool_map(tools)
+    bound_llm = llm.bind_tools(list(tools))
+
+    async def call_llm(state: AgentState) -> AgentState:
+        conversation = list(state.get("messages", []))
+        response = await bound_llm.ainvoke(conversation)
+        cleaned_calls, raw_calls = _normalise_tool_calls(getattr(response, "tool_calls", []) or [])
+        raw_response = _format_result(response.content)
+        return {
+            "messages": [response],
+            "llm_input": conversation,
+            "pending_tool_calls": raw_calls,
+            "tool_calls": cleaned_calls,
+            "raw_llm_response": raw_response,
         }
-        observer = state.get("observer")
-        if observer is not None:
-            before_snapshot = dict(state)
-            after_snapshot = dict(before_snapshot)
-            after_snapshot.update(result)
-            await observer.record_node("invoke_tool", before_snapshot, after_snapshot)
-        return result
 
-    async def compose_tool_response(state: ChatState) -> ChatState:
-        tool_request = state.get("tool_request") or {}
-        tool_name = state.get("tool_name")
-        tool_result = state.get("tool_result")
-        context = state.get("context") or "No enterprise context retrieved."
-        tool_context = ""
-        if tool_name and tool_result:
-            tool_context = f"\n\nTool {tool_name} output:\n{tool_result}"
-        prompt_inputs: Dict[str, object] = {
-            "system_prompt": service.settings.chat_system_prompt,
-            "context": context + tool_context,
-            "history": state.get("history_messages", []),
-            "question": state["user_message"],
-            "tool_instructions": service.tool_instructions,
+    async def call_tool(state: AgentState) -> AgentState:
+        raw_queue = state.get("pending_tool_calls") or []
+        if not raw_queue:
+            return {"messages": []}
+        messages: List[BaseMessage] = []
+        invocations: List[Dict[str, Any]] = []
+        for raw_call in raw_queue:
+            call_id, tool_name, arguments = _extract_call_details(raw_call)
+            argument_text = "{}"
+            try:
+                parsed_args, argument_text = _coerce_arguments(arguments)
+            except ValueError as exc:
+                error_text = f"Invalid arguments for tool '{tool_name}': {exc}"
+                logger.warning(error_text)
+                messages.append(
+                    ToolMessage(
+                        content=error_text,
+                        name=tool_name or "unknown",
+                        tool_call_id=call_id or "invalid-call",
+                    )
+                )
+                invocations.append(
+                    {
+                        "id": call_id,
+                        "name": tool_name,
+                        "arguments": argument_text,
+                        "error": error_text,
+                    }
+                )
+                continue
+            tool = tool_map.get(tool_name)
+            if tool is None:
+                error_text = f"Tool '{tool_name}' is not registered."
+                logger.error(error_text)
+                messages.append(
+                    ToolMessage(
+                        content=error_text,
+                        name=tool_name or "unknown",
+                        tool_call_id=call_id or "missing-tool",
+                    )
+                )
+                invocations.append(
+                    {
+                        "id": call_id,
+                        "name": tool_name,
+                        "arguments": argument_text,
+                        "error": error_text,
+                    }
+                )
+                continue
+            try:
+                if hasattr(tool, "ainvoke"):
+                    result = await tool.ainvoke(parsed_args)  # type: ignore[arg-type]
+                else:
+                    result = tool.invoke(parsed_args)
+            except Exception as exc:  # pragma: no cover - defensive guard
+                logger.exception("Tool '%s' invocation failed", tool_name)
+                error_text = f"Tool '{tool_name}' raised an error: {exc}"
+                messages.append(
+                    ToolMessage(
+                        content=error_text,
+                        name=tool_name,
+                        tool_call_id=call_id or "tool-error",
+                    )
+                )
+                invocations.append(
+                    {
+                        "id": call_id,
+                        "name": tool_name,
+                        "arguments": argument_text,
+                        "error": error_text,
+                    }
+                )
+                continue
+            payload = _format_result(result)
+            messages.append(
+                ToolMessage(
+                    content=payload,
+                    name=tool_name,
+                    tool_call_id=call_id or "tool-result",
+                )
+            )
+            invocations.append(
+                {
+                    "id": call_id,
+                    "name": tool_name,
+                    "arguments": argument_text,
+                    "result": payload,
+                }
+            )
+        return {
+            "messages": messages,
+            "pending_tool_calls": [],
+            "tool_invocations": invocations,
         }
-        prompt_text, response_text = await service._invoke_chain(prompt_inputs)
-        response_text = response_text.strip()
-        result: ChatState = {
-            "response": response_text,
-            "tool_request": None,
-            "tool_result": None,
-            "tool_name": None,
-            "llm_input": prompt_text,
-        }
-        observer = state.get("observer")
-        if observer is not None:
-            before_snapshot = dict(state)
-            after_snapshot = dict(before_snapshot)
-            after_snapshot.update(result)
-            await observer.record_node("compose_tool_response", before_snapshot, after_snapshot)
-        return result
 
-    async def store_response(state: ChatState) -> ChatState:
-        response_text = state.get("response") or ""
-        await service._history_store.add_message(state["session_id"], "assistant", response_text)
-        result = {"response": response_text, "llm_input": None}
-        observer = state.get("observer")
-        if observer is not None:
-            before_snapshot = dict(state)
-            after_snapshot = dict(before_snapshot)
-            after_snapshot.update(result)
-            await observer.record_node("store_response", before_snapshot, after_snapshot)
-        return result
+    def router(state: AgentState) -> str:
+        if state.get("pending_tool_calls"):
+            return "tool"
+        return "end"
 
-    # graph.add_node("retrieve_context", retrieve_context)
-    graph.add_node("run_llm", run_llm)
-    graph.add_node("parse_tool", parse_tool)
-    graph.add_node("invoke_tool", invoke_tool)
-    graph.add_node("compose_tool_response", compose_tool_response)
-    graph.add_node("store_response", store_response)
+    graph = StateGraph(AgentState)
+    graph.add_node("llm", call_llm)
+    graph.add_node("tool", call_tool)
+    graph.set_entry_point("llm")
+    graph.add_conditional_edges("llm", router, {"tool": "tool", "end": END})
+    graph.add_edge("tool", "llm")
+    return graph.compile()
 
-    def _tool_decision(state: ChatState) -> str:
-        return "invoke" if state.get("tool_request") else "store"
 
-    # graph.add_edge(START, "retrieve_context")
-    # graph.add_edge("retrieve_context", "run_llm")
-    graph.add_edge(START, "run_llm")
+def _clone_state(state: AgentState) -> AgentState:
+    cloned: AgentState = {}
+    if "messages" in state:
+        cloned["messages"] = list(state["messages"])
+    if "llm_input" in state:
+        cloned["llm_input"] = list(state["llm_input"])
+    if "pending_tool_calls" in state:
+        cloned["pending_tool_calls"] = list(state["pending_tool_calls"])
+    if "tool_calls" in state:
+        cloned["tool_calls"] = [dict(item) for item in state["tool_calls"]]
+    if "tool_invocations" in state:
+        cloned["tool_invocations"] = [dict(item) for item in state["tool_invocations"]]
+    if "raw_llm_response" in state:
+        cloned["raw_llm_response"] = state["raw_llm_response"]
+    return cloned
 
-    graph.add_edge("run_llm", "parse_tool")
-    graph.add_conditional_edges(
-        "parse_tool",
-        _tool_decision,
-        {
-            "invoke": "invoke_tool",
-            "store": "store_response",
-        },
-    )
-    graph.add_edge("invoke_tool", "compose_tool_response")
-    graph.add_edge("compose_tool_response", "parse_tool")
 
-    # graph.add_edge("compose_tool_response", "store_response")
-    graph.add_edge("store_response", END)
+def _apply_delta(target: AgentState, delta: AgentState) -> None:
+    for key, value in delta.items():
+        if key == "messages":
+            target.setdefault("messages", [])
+            target["messages"].extend(value)
+        elif key == "tool_invocations":
+            existing = list(target.get("tool_invocations", []))
+            existing.extend(value)
+            target["tool_invocations"] = existing
+        else:
+            target[key] = value
 
-    compiled_graph = graph.compile()
 
-    _write_mermaid_png(compiled_graph, service.settings)
+class LangGraphAgent:
+    """Thin wrapper around the compiled LangGraph application."""
 
-    return compiled_graph
+    def __init__(self, llm: BaseChatModel, tools: Sequence[BaseTool]) -> None:
+        self._llm = llm
+        self._tools = tuple(tools)
+        self._app = create_agent_app(llm, tools)
+
+    async def run(
+        self,
+        messages: Sequence[BaseMessage],
+        *,
+        observer: Any | None = None,
+    ) -> AgentState:
+        initial_state: AgentState = {"messages": list(messages)}
+        current_state: AgentState = _clone_state(initial_state)
+        try:
+            async for event in self._app.astream(initial_state, stream_mode="updates"):
+                for node_name, delta in event.items():
+                    before = _clone_state(current_state)
+                    _apply_delta(current_state, delta)
+                    if observer is not None:
+                        await observer.record_node(node_name, before, _clone_state(current_state))
+        finally:
+            if observer is not None:
+                try:
+                    await observer.finalize(_clone_state(current_state))
+                except Exception as exc:  # pragma: no cover - observability should not break the agent
+                    logger.exception("Observer finalization failed: %s", exc)
+        return current_state

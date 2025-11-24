@@ -77,7 +77,37 @@ def _serialize_state(state: Dict[str, Any]) -> Dict[str, Any]:
     if state.get("tool_name"):
         payload["tool_name"] = state["tool_name"]
     if state.get("llm_input"):
-        payload["llm_input"] = _truncate(str(state["llm_input"]), 4000)
+        llm_input = state["llm_input"]
+        if isinstance(llm_input, Sequence):
+            payload["llm_input"] = _serialize_history(llm_input)
+        else:
+            payload["llm_input"] = _truncate(str(llm_input), 4000)
+    if state.get("raw_llm_response"):
+        payload["raw_llm_response"] = _truncate(str(state["raw_llm_response"]), 4000)
+    if state.get("tool_calls"):
+        payload["tool_calls"] = [
+            {
+                "id": call.get("id"),
+                "name": call.get("name"),
+                "arguments": _truncate(str(call.get("arguments", "")), 2000),
+            }
+            for call in state.get("tool_calls", [])
+        ]
+    if state.get("tool_invocations"):
+        payload["tool_invocations"] = [
+            {
+                "id": entry.get("id"),
+                "name": entry.get("name"),
+                "arguments": _truncate(str(entry.get("arguments", "")), 2000),
+                "result": _truncate(str(entry.get("result", "")), 2000)
+                if entry.get("result") is not None
+                else None,
+                "error": _truncate(str(entry.get("error", "")), 2000)
+                if entry.get("error")
+                else None,
+            }
+            for entry in state.get("tool_invocations", [])
+        ]
     return payload
 
 
