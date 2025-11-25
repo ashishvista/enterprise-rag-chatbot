@@ -22,94 +22,6 @@ else:
 logger = logging.getLogger(__name__)
 
 
-def _truncate(text: str, max_len: int = 500) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 3].rstrip() + "..."
-
-
-def _serialize_nodes(nodes: Sequence[Any]) -> list[dict[str, Any]]:
-    serialized: list[dict[str, Any]] = []
-    for node_with_score in nodes:
-        try:
-            node = node_with_score.node
-        except AttributeError:  # pragma: no cover - defensive
-            node = getattr(node_with_score, "node", None)
-        node_id = getattr(node, "node_id", None) or getattr(node, "id_", None) or getattr(node, "doc_id", None)
-        try:
-            text = node.get_content()  # type: ignore[attr-defined]
-        except AttributeError:
-            text = getattr(node, "text", "")
-        serialized.append(
-            {
-                "node_id": str(node_id or ""),
-                "score": float(getattr(node_with_score, "score", 0.0) or 0.0),
-                "text_preview": _truncate((text or "").strip(), 280),
-            }
-        )
-    return serialized
-
-
-def _serialize_history(messages: Sequence[Any]) -> list[dict[str, Any]]:
-    serialized: list[dict[str, Any]] = []
-    for message in messages:
-        role = getattr(message, "type", None) or getattr(message, "role", "")
-        content = getattr(message, "content", "")
-        serialized.append({"role": role, "content": _truncate(str(content))})
-    return serialized
-
-
-def _serialize_state(state: Dict[str, Any]) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {}
-    for key in ("session_id", "user_message", "top_k", "context", "response"):
-        if key in state and state[key] is not None:
-            payload[key] = state[key]
-    if "history_messages" in state and state["history_messages"]:
-        payload["history_messages"] = _serialize_history(state["history_messages"])
-    if "sources" in state and state["sources"]:
-        payload["sources"] = _serialize_nodes(state["sources"])
-    if "raw_hits" in state and state["raw_hits"]:
-        payload["raw_hits"] = _serialize_nodes(state["raw_hits"])
-    if state.get("tool_request"):
-        payload["tool_request"] = state["tool_request"]
-    if state.get("tool_result") is not None:
-        payload["tool_result"] = state["tool_result"]
-    if state.get("tool_name"):
-        payload["tool_name"] = state["tool_name"]
-    if state.get("llm_input"):
-        llm_input = state["llm_input"]
-        if isinstance(llm_input, Sequence):
-            payload["llm_input"] = _serialize_history(llm_input)
-        else:
-            payload["llm_input"] = _truncate(str(llm_input), 4000)
-    if state.get("raw_llm_response"):
-        payload["raw_llm_response"] = _truncate(str(state["raw_llm_response"]), 4000)
-    if state.get("tool_calls"):
-        payload["tool_calls"] = [
-            {
-                "id": call.get("id"),
-                "name": call.get("name"),
-                "arguments": _truncate(str(call.get("arguments", "")), 2000),
-            }
-            for call in state.get("tool_calls", [])
-        ]
-    if state.get("tool_invocations"):
-        payload["tool_invocations"] = [
-            {
-                "id": entry.get("id"),
-                "name": entry.get("name"),
-                "arguments": _truncate(str(entry.get("arguments", "")), 2000),
-                "result": _truncate(str(entry.get("result", "")), 2000)
-                if entry.get("result") is not None
-                else None,
-                "error": _truncate(str(entry.get("error", "")), 2000)
-                if entry.get("error")
-                else None,
-            }
-            for entry in state.get("tool_invocations", [])
-        ]
-    return payload
-
 
 @lru_cache(maxsize=1)
 def _get_langfuse_client(
@@ -154,7 +66,7 @@ class LangfuseObserver:
 
     def _initialize_trace(self, initial_state: Dict[str, Any]) -> None:
         try:
-            state_payload = _serialize_state(initial_state)
+            state_payload = dict(initial_state)
             metadata = {"environment": self._environment, "session_id": self._session_id}
             root_span = self._client.start_span(
                 name="chatbot_session",
