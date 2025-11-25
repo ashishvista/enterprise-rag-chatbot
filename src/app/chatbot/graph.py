@@ -239,19 +239,20 @@ class LangGraphAgent:
         *,
         observer: Any | None = None,
     ) -> AgentState:
-        initial_state: AgentState = {"messages": list(messages)}
-        current_state: AgentState = _clone_state(initial_state)
+        current_state: AgentState = {"messages": list(messages)}
+        # current_state: AgentState = _clone_state(initial_state)
         try:
-            async for event in self._app.astream(initial_state, stream_mode="updates"):
+            async for event in self._app.astream(current_state, stream_mode="updates"):
                 for node_name, output_state in event.items():
-                    before = _clone_state(current_state)
-                    current_state = _clone_state(output_state)
+                    # before = _clone_state(current_state)
+                    # current_state = _clone_state(output_state)
                     if observer is not None:
-                        await observer.record_node(node_name, before, _clone_state(output_state))
+                        await observer.record_node(node_name, current_state, output_state)
+                    current_state=output_state;
         finally:
             if observer is not None:
                 try:
-                    await observer.finalize(_clone_state(current_state))
+                    await observer.finalize(current_state)
                 except Exception as exc:  # pragma: no cover - observability should not break the agent
                     logger.exception("Observer finalization failed: %s", exc)
         return current_state
