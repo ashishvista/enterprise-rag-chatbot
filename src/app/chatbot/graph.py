@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Iterable, List, Sequence
+from typing import Any, Dict, List, Sequence
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, ToolMessage
@@ -31,42 +31,6 @@ def _build_tool_map(tools: Sequence[BaseTool]) -> Dict[str, BaseTool]:
     return {tool.name: tool for tool in tools}
 
 
-def _normalise_tool_calls(raw_calls: Iterable[Any]) -> tuple[List[Dict[str, Any]], List[Any]]:
-    cleaned: List[Dict[str, Any]] = []
-    raw_list: List[Any] = []
-    for call in raw_calls or []:
-        raw_list.append(call)
-        function = getattr(call, "function", None)
-        if function is None and isinstance(call, dict):
-            function = call.get("function")
-        name = getattr(function, "name", None)
-        if name is None and isinstance(call, dict):
-            name = call.get("name")
-        if name is None and isinstance(function, dict):
-            name = function.get("name")
-        call_id = getattr(call, "id", None)
-        if call_id is None and isinstance(call, dict):
-            call_id = call.get("id") or call.get("tool_call_id")
-        arguments = getattr(function, "arguments", None)
-        if arguments is None and isinstance(function, dict):
-            arguments = function.get("arguments")
-        if isinstance(arguments, bytes):
-            arguments = arguments.decode("utf-8", "ignore")
-        if isinstance(arguments, str):
-            arguments_text = arguments
-        else:
-            try:
-                arguments_text = json.dumps(arguments or {}, ensure_ascii=True)
-            except TypeError:
-                arguments_text = str(arguments)
-        cleaned.append({
-            "id": str(call_id or ""),
-            "name": str(name or ""),
-            "arguments": arguments_text,
-        })
-    return cleaned, raw_list
-
-
 def _extract_call_details(call: Any) -> tuple[str, str, Any]:
     function = getattr(call, "function", None)
     if function is None and isinstance(call, dict):
@@ -82,6 +46,9 @@ def _extract_call_details(call: Any) -> tuple[str, str, Any]:
     arguments = getattr(function, "arguments", None)
     if arguments is None and isinstance(function, dict):
         arguments = function.get("arguments")
+    if arguments is None and isinstance(call, dict):
+        # Some providers place arguments on the top-level tool call payload.
+        arguments = call.get("arguments") or call.get("args")
     if isinstance(arguments, bytes):
         arguments = arguments.decode("utf-8", "ignore")
     return str(call_id or ""), str(name or ""), arguments or {}
@@ -117,20 +84,18 @@ def create_agent_app(llm: BaseChatModel, tools: Sequence[BaseTool]):
     async def call_llm(state: AgentState) -> AgentState:
         conversation = list(state.get("messages", []))
         response = await bound_llm.ainvoke(conversation)
-        cleaned_calls, raw_calls = _normalise_tool_calls(getattr(response, "tool_calls", []) or [])
-        raw_response = _format_result(response.content)
+        raw_calls = list(getattr(response, "tool_calls", []) or [])
         return {
-            "messages": [response],
-            "llm_input": conversation,
+            "messages": conversation + [response],
             "pending_tool_calls": raw_calls,
-            "tool_calls": cleaned_calls,
-            "raw_llm_response": raw_response,
         }
 
     async def call_tool(state: AgentState) -> AgentState:
         raw_queue = state.get("pending_tool_calls") or []
         if not raw_queue:
-            return {"messages": []}
+            history = list(state.get("messages", []) or [])
+            return {"messages": history, "pending_tool_calls": []}
+        history = list(state.get("messages", []) or [])
         messages: List[BaseMessage] = []
         invocations: List[Dict[str, Any]] = []
         for raw_call in raw_queue:
@@ -218,7 +183,7 @@ def create_agent_app(llm: BaseChatModel, tools: Sequence[BaseTool]):
                 }
             )
         return {
-            "messages": messages,
+            "messages": history + messages,
             "pending_tool_calls": [],
             "tool_invocations": invocations,
         }
@@ -241,24 +206,17 @@ def _clone_state(state: AgentState) -> AgentState:
     cloned: AgentState = {}
     if "messages" in state:
         cloned["messages"] = list(state["messages"])
-    if "llm_input" in state:
-        cloned["llm_input"] = list(state["llm_input"])
     if "pending_tool_calls" in state:
         cloned["pending_tool_calls"] = list(state["pending_tool_calls"])
-    if "tool_calls" in state:
-        cloned["tool_calls"] = [dict(item) for item in state["tool_calls"]]
     if "tool_invocations" in state:
         cloned["tool_invocations"] = [dict(item) for item in state["tool_invocations"]]
-    if "raw_llm_response" in state:
-        cloned["raw_llm_response"] = state["raw_llm_response"]
     return cloned
 
 
 def _apply_delta(target: AgentState, delta: AgentState) -> None:
     for key, value in delta.items():
         if key == "messages":
-            target.setdefault("messages", [])
-            target["messages"].extend(value)
+            target["messages"] = list(value)
         elif key == "tool_invocations":
             existing = list(target.get("tool_invocations", []))
             existing.extend(value)

@@ -23,8 +23,5 @@ class AgentState(TypedDict, total=False):
     """Canonical state shared across LangGraph nodes."""
 
     messages: Annotated[List[AnyMessage], add_messages]
-    llm_input: List[AnyMessage]
     pending_tool_calls: List[Dict[str, Any]]
-    tool_calls: List[Dict[str, Any]]
-    raw_llm_response: str
     tool_invocations: Annotated[List[Dict[str, Any]], append_invocations]
