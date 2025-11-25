@@ -190,8 +190,8 @@ class LangfuseObserver:
                     "trace_id": self._trace_id,
                     "parent_span_id": self._root_span_id,
                 },
-                input={"state": _serialize_state(before)},
-                output={"state": _serialize_state(after)},
+                input={"state": before},
+                output={"state": after},
                 metadata={"order": self._sequence},
             )
             span.end()
@@ -205,7 +205,7 @@ class LangfuseObserver:
         if self._root_span is None:
             return
         try:
-            serialized = _serialize_state(final_state)
+            serialized = dict(final_state)
             self._root_span.update(output={"state": serialized})
             self._root_span.update_trace(output={"state": serialized})
             self._root_span.end()

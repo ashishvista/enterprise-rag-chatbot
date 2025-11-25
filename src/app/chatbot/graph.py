@@ -247,7 +247,7 @@ class LangGraphAgent:
                     # before = _clone_state(current_state)
                     # current_state = _clone_state(output_state)
                     if observer is not None:
-                        await observer.record_node(node_name, current_state, output_state)
+                        await observer.record_node(node_name, dict(current_state), dict(output_state))
                     current_state=output_state;
         finally:
             if observer is not None:
