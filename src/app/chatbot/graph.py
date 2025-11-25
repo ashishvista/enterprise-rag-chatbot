@@ -202,28 +202,6 @@ def create_agent_app(llm: BaseChatModel, tools: Sequence[BaseTool]):
     return graph.compile()
 
 
-def _clone_state(state: AgentState) -> AgentState:
-    cloned: AgentState = {}
-    if "messages" in state:
-        cloned["messages"] = list(state["messages"])
-    if "pending_tool_calls" in state:
-        cloned["pending_tool_calls"] = list(state["pending_tool_calls"])
-    if "tool_invocations" in state:
-        cloned["tool_invocations"] = [dict(item) for item in state["tool_invocations"]]
-    return cloned
-
-
-def _apply_delta(target: AgentState, delta: AgentState) -> None:
-    for key, value in delta.items():
-        if key == "messages":
-            target["messages"] = list(value)
-        elif key == "tool_invocations":
-            existing = list(target.get("tool_invocations", []))
-            existing.extend(value)
-            target["tool_invocations"] = existing
-        else:
-            target[key] = value
-
 
 class LangGraphAgent:
     """Thin wrapper around the compiled LangGraph application."""
@@ -240,12 +218,9 @@ class LangGraphAgent:
         observer: Any | None = None,
     ) -> AgentState:
         current_state: AgentState = {"messages": list(messages)}
-        # current_state: AgentState = _clone_state(initial_state)
         try:
             async for event in self._app.astream(current_state, stream_mode="updates"):
                 for node_name, output_state in event.items():
-                    # before = _clone_state(current_state)
-                    # current_state = _clone_state(output_state)
                     if observer is not None:
                         await observer.record_node(node_name, dict(current_state), dict(output_state))
                     current_state=output_state;
