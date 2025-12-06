@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Sequence
 
-from sqlalchemy import insert, text
+from sqlalchemy import Column, insert, text
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import String
 
 from llama_index.core.bridge.pydantic import PrivateAttr
 from llama_index.core.schema import BaseNode, MetadataMode
@@ -36,6 +38,12 @@ class LabeledPGVectorStore(PGVectorStore):
                 )
             )
             session.commit()
+
+        table = self._table_class.__table__
+        if self._labels_column_name not in table.c:
+            column = Column(self._labels_column_name, ARRAY(String), nullable=True)
+            table.append_column(column)
+            setattr(self._table_class, self._labels_column_name, table.c[self._labels_column_name])
         self._labels_column_ready = True
 
     def _build_row_payload(self, node: BaseNode) -> Dict[str, Any]:
