@@ -24,7 +24,7 @@ class KnowledgeBaseInput(BaseModel):
 @tool(
     "natwest_knowledge_base",
     description=(
-        "Access the NatWest enterprise knowledge base covering finance, careers, employee programs, "
+        "Access the NatWest enterprise knowledge base covering technology, finance, careers, employee programs, "
         "HR, payroll, and related internal topics. Required argument: query (string)."
     ),
     args_schema=KnowledgeBaseInput,
