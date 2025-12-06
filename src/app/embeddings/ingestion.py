@@ -58,6 +58,7 @@ class PageIngestionService:
         normalized_labels = self._normalize_labels(labels if labels is not None else metadata.get("labels"))
         metadata["labels"] = normalized_labels
 
+
         allowed = self.settings.allowed_spaces()
         space_key = metadata.get("space_key")
         if allowed and space_key not in allowed:

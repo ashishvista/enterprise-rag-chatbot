@@ -8,7 +8,14 @@ from typing import Any, Dict, List, Optional, Sequence
 from llama_index.core import QueryBundle
 from llama_index.core.postprocessor import SentenceTransformerRerank
 from llama_index.core.schema import NodeWithScore
-from llama_index.core.vector_stores.types import VectorStoreQuery, VectorStoreQueryResult
+from llama_index.core.vector_stores.types import (
+    MetadataFilter,
+    MetadataFilters,
+    FilterCondition,
+    FilterOperator,
+    VectorStoreQuery,
+    VectorStoreQueryResult,
+)
 
 from ..config import Settings
 from ..config.db import fetch_scalar
@@ -68,8 +75,13 @@ class RetrieverService:
         logger.info("Retriever ready with %s nodes in pgvector", count)
         return count
 
-    async def retrieve(self, query: str, top_k: Optional[int] = None) -> RetrievalResult:
-        """Fetch top-K results from pgvector and rerank them."""
+    async def retrieve(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        labels: Optional[List[str]] = None,
+    ) -> RetrievalResult:
+        """Fetch top-K results from pgvector and rerank them, with optional label filter."""
 
         if not self.is_ready():
             try:
@@ -81,8 +93,13 @@ class RetrieverService:
         search_k = max(self.settings.retriever_search_k, desired_top_k)
 
         query_embedding = self.embed_model._get_query_embedding(query)
+        metadata_filters = self._build_label_filters(labels)
         result = self.vector_store.query(
-            VectorStoreQuery(query_embedding=query_embedding, similarity_top_k=search_k)
+            VectorStoreQuery(
+                query_embedding=query_embedding,
+                similarity_top_k=search_k,
+                filters=metadata_filters,
+            )
         )
         raw_hits = self._nodes_from_result(result)
         raw_hits = self._filter_by_score(raw_hits, self.settings.retriever_min_score)
@@ -158,6 +175,26 @@ class RetrieverService:
         return SentenceTransformerRerank(
             model=self.settings.reranker_model_name,
             top_n=self.settings.reranker_top_n,
+        )
+
+    def _build_label_filters(
+        self, labels: Optional[List[str]]
+    ) -> Optional[MetadataFilters]:
+        if not labels:
+            return None
+        cleaned = [label for label in labels if label]
+        if not cleaned:
+            return None
+        # Use ANY operator on labels array column
+        return MetadataFilters(
+            filters=[
+                MetadataFilter(
+                    key="labels",
+                    value=cleaned,
+                    operator=FilterOperator.ANY,
+                )
+            ],
+            condition=FilterCondition.AND,
         )
 
     async def _count_nodes(self) -> int:

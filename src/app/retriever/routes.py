@@ -23,6 +23,10 @@ class RetrieveRequest(BaseModel):
         ge=1,
         description="Number of top results to return after reranking.",
     )
+    labels: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of labels to filter on (OR across provided labels).",
+    )
 
 
 class RetrievedNode(BaseModel):
@@ -49,7 +53,7 @@ async def query_retriever(
             detail="top_k cannot exceed RETRIEVER_SEARCH_K",
         )
     try:
-        result: RetrievalResult = await service.retrieve(payload.query, payload.top_k)
+        result: RetrievalResult = await service.retrieve(payload.query, payload.top_k, labels=payload.labels)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive
