@@ -34,7 +34,9 @@ class ConfluenceClient:
         """Fetch a Confluence page with storage body + metadata."""
         response = self._client.get(
             f"/wiki/rest/api/content/{page_id}",
-            params={"expand": "body.storage,version,space,history.lastUpdated"},
+            params={
+                "expand": "body.storage,version,space,history.lastUpdated,metadata.labels",
+            },
         )
         response.raise_for_status()
         return response.json()
@@ -95,6 +97,12 @@ class ConfluenceClient:
         version = page_payload.get("version", {})
         history = page_payload.get("history", {})
         last_updated = history.get("lastUpdated", {})
+        label_results = (
+            page_payload.get("metadata", {})
+            .get("labels", {})
+            .get("results", [])
+        )
+        labels = [label.get("name") for label in label_results if label.get("name")]
         return {
             "page_id": page_payload.get("id"),
             "title": page_payload.get("title"),
@@ -105,6 +113,7 @@ class ConfluenceClient:
             "last_updated_on": last_updated.get("when"),
             "status": page_payload.get("status"),
             "url": ConfluenceClient.build_page_url(page_payload.get("_links", {})),
+            "labels": labels,
         }
 
     @staticmethod
