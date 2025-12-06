@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 from llama_index.core import Document, StorageContext, VectorStoreIndex
 from llama_index.core.node_parser import SentenceSplitter, SemanticSplitterNodeParser
 
 from ..config import Settings
-from ..confluence import ConfluenceClient
+from .markdown_utils import page_as_md
 from .ollama import OllamaBgeM3Embedding
 from .vector_store import create_pgvector_store
 
@@ -30,41 +30,45 @@ class PageIngestionService:
         self.splitter = self._build_chunker()
         self.vector_store = create_pgvector_store(settings)
 
-    def process_page(self, page_id: str) -> None:
+    def process_page(
+        self,
+        page_id: str,
+        *,
+        document_text: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        labels: Optional[List[str]] = None,
+    ) -> None:
         """Fetch, chunk, embed, and store a Confluence page."""
         logger.info("Processing Confluence page %s", page_id)
-        with ConfluenceClient(self.settings) as client:
-            page_payload = client.fetch_page(page_id)
-        metadata = ConfluenceClient.page_metadata(page_payload)
+
+        if document_text is None or metadata is None:
+            logger.error(
+                "process_page called without document_text/metadata for page %s; caller must supply original Confluence body and metadata",
+                page_id,
+            )
+            raise ValueError("document_text and metadata are required")
+
+        metadata = dict(metadata)
+
+        # Convert storage HTML to markdown for ingestion
+        document_text = page_as_md(document_text)
+
+        metadata = metadata or {}
+        metadata.setdefault("page_id", page_id)
+        normalized_labels = self._normalize_labels(labels if labels is not None else metadata.get("labels"))
+        metadata["labels"] = normalized_labels
+
         allowed = self.settings.allowed_spaces()
         space_key = metadata.get("space_key")
         if allowed and space_key not in allowed:
-            logger.info("Skipping page %s because space %s is not whitelisted", page_id, space_key)
+            logger.info(
+                "Skipping page %s because space %s is not whitelisted",
+                page_id,
+                space_key,
+            )
             return
-        document_text = ConfluenceClient.page_as_md(page_payload)
-        if not document_text.strip():
-            logger.warning("Page %s has no textual content to index", page_id)
-            return
-        
-        # Delete existing vectors for this page before inserting new ones
-        self._delete_page_vectors(page_id)
-        
-        document = Document(text=document_text, metadata=metadata, id_=str(page_id))
-        try:
-            nodes = self._build_nodes(document)
-        except Exception as e:
-            logger.error("Failed to build nodes for page %s: %s", page_id, e, exc_info=True)
-            raise
-        if not nodes:
-            logger.warning("Page %s produced zero nodes after chunking", page_id)
-            return
-        storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
-        try:
-            VectorStoreIndex(nodes, storage_context=storage_context, embed_model=self.embed_model)
-        except Exception as e:
-            logger.error("Failed to create vector index for page %s: %s", page_id, e, exc_info=True)
-            raise
-        logger.info("Finished indexing page %s (%s nodes)", page_id, len(nodes))
+
+        self._ingest_document(page_id, document_text or "", metadata)
 
     def _build_nodes(self, document: Document) -> List:
         """Chunk the document and ensure deterministic IDs."""
@@ -105,3 +109,36 @@ class PageIngestionService:
             logger.info("Deleted existing vectors for page %s", page_id)
         except Exception as e:
             logger.warning("Could not delete existing vectors for page %s: %s", page_id, e)
+
+    def _ingest_document(self, page_id: str, document_text: str, metadata: Dict[str, Any]) -> None:
+        if not document_text.strip():
+            logger.warning("Page %s has no textual content to index", page_id)
+            return
+
+        self._delete_page_vectors(page_id)
+
+        document = Document(text=document_text, metadata=metadata, id_=str(page_id))
+        try:
+            nodes = self._build_nodes(document)
+        except Exception as e:
+            logger.error("Failed to build nodes for page %s: %s", page_id, e, exc_info=True)
+            raise
+        if not nodes:
+            logger.warning("Page %s produced zero nodes after chunking", page_id)
+            return
+
+        storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
+        try:
+            VectorStoreIndex(nodes, storage_context=storage_context, embed_model=self.embed_model)
+        except Exception as e:
+            logger.error("Failed to create vector index for page %s: %s", page_id, e, exc_info=True)
+            raise
+        logger.info("Finished indexing page %s (%s nodes)", page_id, len(nodes))
+
+    @staticmethod
+    def _normalize_labels(raw_labels: Optional[Any]) -> List[str]:
+        if raw_labels is None:
+            return []
+        if isinstance(raw_labels, list):
+            return [str(label) for label in raw_labels if label]
+        return [str(raw_labels)]

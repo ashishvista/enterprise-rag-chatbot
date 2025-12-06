@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     reranker_top_n: int = 3
     retriever_min_score: Optional[float] = None
     reranker_min_score: Optional[float] = None
+    embeddings_base_url: str = "http://localhost:8000"
     langfuse_public_key: Optional[str] = None
     langfuse_secret_key: Optional[str] = None
     langfuse_host: Optional[str] = None

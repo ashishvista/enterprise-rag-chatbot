@@ -1,5 +1,18 @@
 # Enterprise RAG Confluence Webhooks
+## Embeddings API
 
+The service now exposes a first-class embeddings endpoint mounted at `/embeddings/create`. Payload shape:
+
+```json
+{
+   "node_id": "112233",
+   "text": "Markdown or plaintext content",
+   "metadata": {"page_id": "112233", "space_key": "TEAM"},
+   "labels": ["tag-a", "tag-b"]
+}
+```
+
+This mirrors the Confluence webhook ingestion flow. Confluence webhook routes call this endpoint internally after fetching page content, so webhooks are now synchronous and there is no background task.
 FastAPI service that ingests Confluence page creation + update webhooks, fetches the latest page body, generates embeddings with LlamaIndex + the `bge-m3` model running on Ollama, and stores vectors inside Postgres with the pgvector extension.
 
 ## Features
