@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 from langchain_core.tools import tool
@@ -19,6 +19,10 @@ class KnowledgeBaseInput(BaseModel):
         ...,
         description="Natural language question to search the NatWest knowledge base with.",
     )
+    labels: Optional[List[str]] = Field(
+        default=None,
+        description="Optional labels to filter retrieval; leave empty to search all.",
+    )
 
 
 @tool(
@@ -29,7 +33,7 @@ class KnowledgeBaseInput(BaseModel):
     ),
     args_schema=KnowledgeBaseInput,
 )
-async def query_natwest_knowledge_base(query: str) -> str:
+async def query_natwest_knowledge_base(query: str, labels: Optional[List[str]] = None) -> str:
     """Return a formatted answer using the /retriever/query HTTP endpoint."""
 
     question = (query or "").strip()
@@ -47,7 +51,7 @@ async def query_natwest_knowledge_base(query: str) -> str:
         async with create_async_httpx_client(base_url=base_url, timeout=settings.request_timeout) as client:
             response = await client.post(
                 "/retriever/query",
-                json={"query": question},
+                json={"query": question, "labels": labels},
             )
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
